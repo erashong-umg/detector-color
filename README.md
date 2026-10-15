@@ -10,6 +10,16 @@ impresa. Muestra el resultado en una pantalla **ST7789 240×240**.
 > HAL del SDK** (`gpio_put`, `spi_write_blocking`, `pwm_set_*`, `adc_read`…). El SDK solo aporta el
 > arranque (boot2, crt0), los relojes y `printf` por USB.
 
+## Integrantes
+
+| Nombre | Carné |
+|---|---|
+| Brayan Kenet Rivera Quinilla | 9490-23-2835 |
+| Wilder Alfonso Castillo Salguero | 9490-21-3708 |
+| Erick Orlando Rashon Gonzalez | 9490-11-5609 |
+| Marco Tulio Pineda Recinos | 9490-23-2906 |
+| Werner Josue Ortiz Abdalla | 9040-20-1143 |
+
 ## Hardware
 
 | Módulo | Función |
