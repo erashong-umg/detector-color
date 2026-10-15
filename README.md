@@ -10,7 +10,7 @@ impresa. Muestra el resultado en una pantalla **ST7789 240×240**.
 > HAL del SDK** (`gpio_put`, `spi_write_blocking`, `pwm_set_*`, `adc_read`…). El SDK solo aporta el
 > arranque (boot2, crt0), los relojes y `printf` por USB.
 
-## Integrantes
+## Integrantes — Grupo 1
 
 | Nombre | Carné |
 |---|---|
