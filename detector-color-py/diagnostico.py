@@ -68,3 +68,29 @@ def motor(vel=config.EJE_VEL_HOMING, segundos=1):
                 time.sleep_ms(1)
     finally:
         m.habilitar(False)
+
+
+def rendimiento(segundos=10):
+    """Mide cuánto tarda cada vuelta del bucle (sin motor). El motor y los finales se
+    vigilan en cada vuelta, así que el MÁXIMO debe quedar por debajo de ~5 ms."""
+    import gc
+    from app import App
+    a = App()
+    gc.collect()
+    n = peor = total = 0
+    peor_dibujo = 0
+    t_fin = time.ticks_add(time.ticks_ms(), segundos * 1000)
+    while time.ticks_diff(t_fin, time.ticks_ms()) > 0:
+        t0 = time.ticks_us()
+        a.paso()
+        dt = time.ticks_diff(time.ticks_us(), t0)
+        n, total, peor = n + 1, total + dt, max(peor, dt)
+        t0 = time.ticks_us()
+        a._actualizar_modelo()
+        a.ui.dibujar(a.modelo)
+        peor_dibujo = max(peor_dibujo, time.ticks_diff(time.ticks_us(), t0))
+        a._leer_entradas()
+    print("paso(): media %d us, peor %d us (%d vueltas)" % (total // n, peor, n))
+    print("modelo + dibujo: peor %d us" % peor_dibujo)
+    gc.collect()
+    print("memoria libre:", gc.mem_free(), "bytes")

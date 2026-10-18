@@ -59,6 +59,13 @@ polaridad de los finales (`FINAL_ACTIVO_BAJO`), sentido del motor (`MOTOR_SIGNO`
 del IR de proximidad (`PROX_*`), recorrido real (`EJE_LONGITUD_MM`, `EJE_RECORRIDO_ESPERADO_MS`) y
 dónde empieza y acaba la escala impresa (`ESCALA_*`).
 
+## Rendimiento
+
+El bucle principal vigila finales y rampa del motor en cada vuelta, así que lo que importa es el tiempo
+**máximo** de una vuelta. En la Pico: `import diagnostico; diagnostico.rendimiento()` imprime la media y el
+peor caso de `paso()` y del dibujo (si el peor pasa de ~5 ms, bajar `TCS_VENTANA_US` o simplificar la pantalla).
+Se recoge basura cada 500 ms con el motor parado para que las pausas del GC sean cortas.
+
 ## Pruebas en el PC
 
 ```bash
@@ -72,10 +79,9 @@ guardar, navegar todas las pantallas). Valida la lógica, no el cableado.
 
 ## Qué cambia respecto a la versión en C
 
-- **Usa la API `machine`** (`Pin`, `PWM`, `ADC`, `SPI`) en vez de structs de registros. Solo el contador
-  de flancos del TCS3200 toca registros (`mem32`), porque `machine.PWM` no sabe contar entradas.
-  Por eso esta versión **no cumple la regla del curso «sin HAL»**; si la entrega la exige, la versión
-  válida es la de C.
+- **Usa la API `machine`** (`Pin`, `PWM`, `ADC`, `SPI`) y `rp2` (un programa PIO de 3 instrucciones cuenta
+  los pulsos del TCS3200 sin CPU y sin registros). Por eso esta versión **no cumple la regla del curso
+  «sin HAL»**; si la entrega la exige, la versión válida es la de C.
 - Una sola pila de módulos en vez de capas hexagonales; posiciones en mm (float) en vez de µm.
 - Se quitaron: la «referencia previa» por el final más cercano, la velocidad de aproximación (era igual
   a la de viaje) y los 8 programas de prueba (los sustituye `diagnostico.py`).

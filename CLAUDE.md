@@ -74,7 +74,7 @@ pruebas/       programas de bring-up por módulo
 
 ## Rama `micropython` — `detector-color-py/`
 
-Reescritura simple del firmware en **MicroPython** (carpeta aparte; el C de `src/` no se toca). Es plana: `app.py` (estados y bucle), `carro.py` (motor + finales + posición por tiempo), `sensores.py`, `actuadores.py`, `color.py` (lógica pura), `pantalla.py`/`ui.py`/`fuente.py`, `config.py` (pines y parámetros en mm). Usa la API `machine` y **rompe la regla «sin HAL»** del curso; solo el contador de flancos del TCS3200 usa `mem32`. Detalle en `detector-color-py/README.md`.
+Reescritura simple del firmware en **MicroPython** (carpeta aparte; el C de `src/` no se toca). Es plana: `app.py` (estados y bucle), `carro.py` (motor + finales + posición por tiempo), `sensores.py`, `actuadores.py`, `color.py` (lógica pura), `pantalla.py`/`ui.py`/`fuente.py`, `config.py` (pines y parámetros en mm). Usa la API `machine` y **rompe la regla «sin HAL»** del curso; el contador de flancos del TCS3200 es un programa PIO (`rp2`). Detalle en `detector-color-py/README.md`.
 
 - Pruebas en el PC: `cd detector-color-py && python test_pc.py` (simula `machine`, `framebuf` y el reloj; si se añade una llamada a `machine`/`time`/`framebuf` que el simulador no tenga, hay que ampliar los fakes del propio test).
 - Subir a la Pico: `mpremote cp main.py app.py carro.py sensores.py actuadores.py color.py pantalla.py ui.py fuente.py config.py :`.

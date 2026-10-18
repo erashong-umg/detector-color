@@ -1,6 +1,7 @@
 """Sensores y entradas: TCS3200, IR de proximidad, finales de carrera, botones y joystick."""
 import time
-from machine import ADC, Pin, mem32
+import rp2
+from machine import ADC, Pin
 
 import config
 
@@ -8,50 +9,53 @@ ticks_ms, ticks_us, diff = time.ticks_ms, time.ticks_us, time.ticks_diff
 
 
 # ======================================================================
-# TCS3200: la frecuencia se cuenta por hardware con una slice PWM
+# TCS3200: su salida es una onda cuadrada cuya frecuencia crece con la luz.
+# Un programa PIO cuenta los flancos sin gastar CPU; se lee el contador al
+# cerrar una ventana de tiempo fija.
 # ======================================================================
-# machine.PWM no sabe contar flancos de entrada, así que este es el único
-# sitio que toca registros del RP2040 (PWM2, canal B = GP5).
-_PWM = 0x40050000
-_SLICE = (config.TCS_OUT >> 1) & 7
-_CSR, _DIV, _CTR, _TOP = (_PWM + _SLICE * 0x14 + o for o in (0x00, 0x04, 0x08, 0x10))
-_INTR = _PWM + 0xA4                       # marca de desborde del contador (W1C)
-_IO_CTRL = 0x40014000 + 8 * config.TCS_OUT + 4
+@rp2.asm_pio()
+def _contador():
+    label("lazo")
+    wait(0, pin, 0)
+    wait(1, pin, 0)
+    jmp(x_dec, "lazo")              # X baja 1 por cada pulso
 
-# filtros (S2, S3): rojo, verde, azul, claro
-_FILTROS = ((0, 0), (1, 1), (0, 1), (1, 0))
+
+# filtros (S2, S3): rojo, verde, azul
+_FILTROS = ((0, 0), (1, 1), (0, 1))
 
 
 class Tcs3200:
     def __init__(self):
         self.s2 = Pin(config.TCS_S2, Pin.OUT, value=0)
         self.s3 = Pin(config.TCS_S3, Pin.OUT, value=0)
-        Pin(config.TCS_OUT, Pin.IN)       # configura el pad (sin pull)
-        mem32[_IO_CTRL] = 4               # FUNCSEL = PWM
-        mem32[_CSR] = 2 << 4              # DIVMODE = cuenta flancos de subida en B, EN = 0
-        mem32[_DIV] = 1 << 4              # divisor 1.0
-        mem32[_TOP] = 0xFFFF
+        self.sm = rp2.StateMachine(0, _contador, freq=125_000_000,
+                                   in_base=Pin(config.TCS_OUT, Pin.IN))
 
     def _frecuencia(self, filtro):
-        """Hz del canal, o None si el contador de 16 bits dio la vuelta."""
+        """Hz del canal, o None si no llegan pulsos (sensor desconectado)."""
         self.s2.value(_FILTROS[filtro][0])
         self.s3.value(_FILTROS[filtro][1])
         time.sleep_us(config.TCS_ESPERA_FILTRO_US)
-        mem32[_CTR] = 0
-        mem32[_INTR] = 1 << _SLICE
+        sm = self.sm
+        sm.restart()
+        sm.exec("set(x, 0)")
+        sm.exec("mov(x, invert(x))")        # X = 0xFFFFFFFF
         t0 = ticks_us()
-        mem32[_CSR] = (2 << 4) | 1        # abre la ventana
+        sm.active(1)                        # abre la ventana
         while diff(ticks_us(), t0) < config.TCS_VENTANA_US:
             pass
-        mem32[_CSR] = 2 << 4              # cierra la ventana
+        sm.active(0)                        # cierra la ventana
         dt = diff(ticks_us(), t0)
-        cuentas = mem32[_CTR] & 0xFFFF
-        if mem32[_INTR] & (1 << _SLICE):
+        sm.exec("in_(x, 32)")
+        sm.exec("push()")
+        cuentas = 0xFFFFFFFF - (sm.get() & 0xFFFFFFFF)
+        if cuentas == 0:
             return None
         return (cuentas * 1_000_000 + dt // 2) // dt
 
     def medir(self):
-        """Promedio de MUESTRAS_COLOR lecturas -> (r, g, b) en Hz, o None si desbordó.
+        """Promedio de MUESTRAS_COLOR lecturas -> (r, g, b) en Hz, o None si falla.
         Bloquea unos 90 ms por muestra: usar solo con el carrito parado."""
         suma = [0, 0, 0]
         for _ in range(config.MUESTRAS_COLOR):
@@ -178,7 +182,8 @@ class Botones:
 
     def actualizar(self):
         ahora = ticks_ms()
-        self.eventos = ev = set()
+        ev = self.eventos
+        ev.clear()
         for n, pin in self._pines.items():
             lectura = not pin.value()                 # activo en bajo
             if lectura != self._cand[n]:

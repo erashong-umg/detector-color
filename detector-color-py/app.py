@@ -10,6 +10,7 @@ Controles:
   MANUAL: joystick X mueve el cursor · B4 o SW salen
   ERROR: B4 largo reinicia el error
 """
+import gc
 import time
 
 import actuadores as act
@@ -352,10 +353,15 @@ class App:
             self._mensaje("Cursor en posición")
 
     def ejecutar(self):
-        t_entrada = t_dibujo = ticks_ms()
+        t_entrada = t_dibujo = t_gc = ticks_ms()
         while True:
             self.paso()
             ahora = ticks_ms()
+            # Recolectar basura con frecuencia mantiene cada pausa corta (<~5 ms); con el
+            # montón lleno una sola pausa puede pasar de 20 ms y frenar el motor a destiempo.
+            if diff(ahora, t_gc) >= 500 and self.carro.motor.real == 0:
+                t_gc = ahora
+                gc.collect()
             if diff(ahora, t_entrada) >= 10:         # el joystick son 8 conversiones del ADC
                 t_entrada = ahora
                 e = self._leer_entradas()

@@ -7,7 +7,7 @@ versión en C). Las posiciones se manejan en milímetros.
 # ---- Pines (GP) -------------------------------------------------------
 # GP23/24/25/29 los usa el chip Wi-Fi de la Pico W: no usar.
 TFT_DC, TFT_RST, TFT_SCK, TFT_MOSI = 16, 17, 18, 19   # ST7789 por SPI0 (sin CS)
-TCS_S2, TCS_S3, TCS_OUT = 2, 3, 5                      # OUT debe ser impar (canal B del PWM)
+TCS_S2, TCS_S3, TCS_OUT = 2, 3, 5                      # OUT: cualquier GPIO (lo lee un programa PIO)
 IR_INICIO, IR_FIN = 4, 6                               # finales de carrera
 IR_PROX_A, IR_PROX_D = 28, 1                           # IR de proximidad (analógico / digital)
 MOTOR_STBY, MOTOR_PWM, MOTOR_IN1, MOTOR_IN2 = 7, 8, 9, 10   # TB6612FNG canal A
@@ -23,7 +23,7 @@ TFT_INVERTIR = True          # panel IPS
 TFT_MADCTL = 0x00            # orientación (0x00, 0x60, 0xC0, 0xA0)
 
 # ---- Sensor de color --------------------------------------------------
-TCS_VENTANA_US = 20_000      # ventana de conteo por canal
+TCS_VENTANA_US = 20_000      # ventana de conteo por canal (más larga = más resolución, más lenta)
 TCS_ESPERA_FILTRO_US = 2_000
 MUESTRAS_COLOR = 3           # mediciones promediadas por lectura
 

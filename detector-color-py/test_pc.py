@@ -94,6 +94,35 @@ framebuf = types.ModuleType("framebuf")
 framebuf.FrameBuffer, framebuf.RGB565, framebuf.MONO_HLSB = FrameBuffer, 1, 2
 sys.modules["framebuf"] = framebuf
 
+class StateMachine:
+    """Cuenta pulsos a FRECUENCIA_SIM Hz mientras está activa (reloj simulado)."""
+    FRECUENCIA_SIM = 50_000
+
+    def __init__(self, *a, **k):
+        self.x, self.t0 = 0, None
+
+    def restart(self): pass
+
+    def exec(self, instr):
+        if instr.startswith("mov(x"):
+            self.x = 0xFFFFFFFF
+
+    def active(self, si):
+        if si:
+            self.t0 = T[0]
+        elif self.t0 is not None:
+            self.x -= self.FRECUENCIA_SIM * (T[0] - self.t0) // 1_000_000
+            self.t0 = None
+
+    def get(self):
+        return self.x
+
+
+rp2 = types.ModuleType("rp2")
+rp2.asm_pio = lambda **k: (lambda f: f)
+rp2.StateMachine = StateMachine
+sys.modules["rp2"] = rp2
+
 # ---------------------------------------------------------------- pruebas
 import color                                        # noqa: E402
 import config                                       # noqa: E402
@@ -164,6 +193,26 @@ def correr(planta, motor, ms, hasta=None, tick=lambda: None):
             return True
     return hasta is None
 
+
+titulo("Sensor de color (contador PIO simulado)")
+from sensores import Tcs3200                        # noqa: E402
+import sensores                                     # noqa: E402
+
+
+def _reloj_que_avanza():                            # la espera activa de la ventana necesita que pase el tiempo
+    T[0] += 50
+    return T[0]
+
+
+sensores.ticks_us = _reloj_que_avanza
+sensor = Tcs3200()
+f = sensor._frecuencia(0)
+comprobar(f is not None and abs(f - 50_000) < 500, "frecuencia medida %s Hz (simulada 50000)" % f)
+StateMachine.FRECUENCIA_SIM = 0
+comprobar(sensor.medir() is None, "sin pulsos -> None")
+StateMachine.FRECUENCIA_SIM = 50_000
+comprobar(all(abs(v - 50_000) < 500 for v in sensor.medir()), "medir() promedia los 3 canales")
+sensores.ticks_us = time.ticks_us
 
 titulo("Carrito: homing, calibración y viajes")
 for inicio, ruido in ((150.0, 0.0), (0.0, 0.0), (320.0, 0.0), (150.0, 0.03)):
