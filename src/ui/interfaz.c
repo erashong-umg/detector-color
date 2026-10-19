@@ -27,7 +27,12 @@
 #define MARGEN        6
 #define ANCHO_UTIL    (TFT_ANCHO - 2 * MARGEN)       /* 228 */
 #define BARRA_ALTO    22
-#define FILA_MENU     20
+/* El diseño base es de 240 px de alto. En un panel más alto (240x320) el contenido del medio
+   baja EXTRA_M y los textos de abajo bajan EXTRA, para aprovechar toda la pantalla. */
+#define EXTRA         (TFT_ALTO - 240)
+#define EXTRA_M       (EXTRA / 2)
+#define FILA_MENU     (20 + EXTRA / 10)
+#define TXT_Y(y)      ((y) + (FILA_MENU - 16) / 2)      /* texto de escala 2 centrado en una fila */
 
 /* ---- Estado de la interfaz ---- */
 typedef enum {
@@ -206,7 +211,7 @@ static void dibujar_barra_titulo(const char *titulo)
 
 static void dibujar_pie(const char *texto)
 {
-    texto_formato(MARGEN, 226, 1, C_TENUE, C_FONDO, 38, "%s", texto);
+    texto_formato(MARGEN, TFT_ALTO - 14, 1, C_TENUE, C_FONDO, 38, "%s", texto);
 }
 
 static void dibujar_escala(int y, int alto)
@@ -262,19 +267,19 @@ static void chip(int x, int y, const char *texto, bool activo, uint16_t color_ac
 /* ================================================================== */
 
 #define P_MUESTRA_Y     24
-#define P_MUESTRA_ALTO  72
-#define P_VALORES_Y     100
-#define P_HSV_Y         120
-#define P_POS_Y         140
-#define P_OBJ_Y         158
-#define P_ESCALA_Y      184
+#define P_MUESTRA_ALTO  (72 + EXTRA_M)
+#define P_VALORES_Y     (100 + EXTRA_M)
+#define P_HSV_Y         (120 + EXTRA_M)
+#define P_POS_Y         (140 + EXTRA_M)
+#define P_OBJ_Y         (158 + EXTRA_M)
+#define P_ESCALA_Y      (184 + EXTRA_M)
 #define P_ESCALA_ALTO   14
-#define P_MARCA_OBJ_Y   176
-#define P_MARCA_POS_Y   199
+#define P_MARCA_OBJ_Y   (176 + EXTRA_M)
+#define P_MARCA_POS_Y   (199 + EXTRA_M)
 #define P_MARCA_ALTO    7
-#define P_ESTADO_Y      210
-#define P_AYUDA_Y       222
-#define P_MENSAJE_Y     232
+#define P_ESTADO_Y      (210 + EXTRA)
+#define P_AYUDA_Y       (222 + EXTRA)
+#define P_MENSAJE_Y     (232 + EXTRA)
 
 static void principal_estatico(void)
 {
@@ -315,12 +320,12 @@ static void principal_seccion(const ui_modelo_t *m, unsigned s)
             uint16_t c = ST7789_RGB565(m->rgb.r, m->rgb.g, m->rgb.b);
             uint16_t t = contraste(m->rgb);
             st7789_rect(MARGEN, P_MUESTRA_Y, ANCHO_UTIL, P_MUESTRA_ALTO, c);
-            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 18, m->hex, 3, t, c);
-            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 56, texto_clase(m->clase), 1, t, c);
+            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 18 + EXTRA_M / 2, m->hex, 3, t, c);
+            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 56 + EXTRA_M, texto_clase(m->clase), 1, t, c);
         } else {
             st7789_rect(MARGEN, P_MUESTRA_Y, ANCHO_UTIL, P_MUESTRA_ALTO, C_PANEL);
-            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 20, "SIN LECTURA", 2, C_TENUE, C_PANEL);
-            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 46, "pulsa B1 para medir", 1, C_TENUE, C_PANEL);
+            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 20 + EXTRA_M / 2, "SIN LECTURA", 2, C_TENUE, C_PANEL);
+            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 46 + EXTRA_M, "pulsa B1 para medir", 1, C_TENUE, C_PANEL);
         }
         break;
 
@@ -410,7 +415,7 @@ static void menu_seccion(const ui_modelo_t *m, unsigned s)
     bool sel = (int)s == menu_sel;
     uint16_t bg = sel ? C_SEL : C_FONDO;
     st7789_rect(0, 30 + (int)s * FILA_MENU, TFT_ANCHO, FILA_MENU, bg);
-    texto_formato(10, 32 + (int)s * FILA_MENU, 2, sel ? C_TEXTO : C_TENUE, bg, 0, "%s %s",
+    texto_formato(10, TXT_Y(30 + (int)s * FILA_MENU), 2, sel ? C_TEXTO : C_TENUE, bg, 0, "%s %s",
                   sel ? ">" : " ", nombre_item((item_menu_t)s, m));
 }
 #define MENU_SECCIONES (M_CANTIDAD + 1)
@@ -419,7 +424,7 @@ static void menu_seccion(const ui_modelo_t *m, unsigned s)
 /* Historial                                                           */
 /* ================================================================== */
 
-#define H_FILAS 7
+#define H_FILAS ((TFT_ALTO - 60) / FILA_MENU)
 
 static void historial_seccion(const ui_modelo_t *m, unsigned s)
 {
@@ -431,8 +436,8 @@ static void historial_seccion(const ui_modelo_t *m, unsigned s)
     }
     if (n == 0) {
         if (s == 2) {
-            texto_centrado(0, TFT_ANCHO, 80, "Sin lecturas", 2, C_TENUE, C_FONDO);
-            texto_centrado(0, TFT_ANCHO, 106, "guarda con B4 al medir", 1, C_TENUE, C_FONDO);
+            texto_centrado(0, TFT_ANCHO, 80 + EXTRA_M, "Sin lecturas", 2, C_TENUE, C_FONDO);
+            texto_centrado(0, TFT_ANCHO, 106 + EXTRA_M, "guarda con B4 al medir", 1, C_TENUE, C_FONDO);
         }
         return;
     }
@@ -457,12 +462,12 @@ static void historial_seccion(const ui_modelo_t *m, unsigned s)
     fmt_mm(pos, sizeof pos, e.x_um);
 
     st7789_rect(0, y, TFT_ANCHO, FILA_MENU, bg);
-    st7789_rect(8, y + 2, 16, 16, ST7789_RGB565(e.rgb.r, e.rgb.g, e.rgb.b));
-    texto_dibujar(32, y + 2, hex, 2, sel ? C_TEXTO : C_TENUE, bg);
+    st7789_rect(8, TXT_Y(y), 16, 16, ST7789_RGB565(e.rgb.r, e.rgb.g, e.rgb.b));
+    texto_dibujar(32, TXT_Y(y), hex, 2, sel ? C_TEXTO : C_TENUE, bg);
     if (e.x_um >= 0) {
-        texto_formato(128, y + 2, 2, sel ? C_TEXTO : C_TENUE, bg, 7, "%smm", pos);
+        texto_formato(128, TXT_Y(y), 2, sel ? C_TEXTO : C_TENUE, bg, 7, "%smm", pos);
     } else {
-        texto_formato(128, y + 2, 2, C_TENUE, bg, 7, "sin pos.");
+        texto_formato(128, TXT_Y(y), 2, C_TENUE, bg, 7, "sin pos.");
     }
 }
 #define HISTORIAL_SECCIONES (H_FILAS + 1)
@@ -471,10 +476,10 @@ static void historial_seccion(const ui_modelo_t *m, unsigned s)
 /* Mover cursor                                                        */
 /* ================================================================== */
 
-#define V_ESCALA_Y   150
+#define V_ESCALA_Y   (150 + EXTRA_M)
 #define V_ESCALA_ALTO 20
-#define V_MARCA_OBJ_Y 134
-#define V_MARCA_POS_Y 172
+#define V_MARCA_OBJ_Y (134 + EXTRA_M)
+#define V_MARCA_POS_Y (172 + EXTRA_M)
 #define V_MARCA_ALTO  14
 
 static void mover_estatico(void)
@@ -490,12 +495,12 @@ static void mover_seccion(const ui_modelo_t *m, unsigned s)
     switch (s) {
     case 0:
         fmt_mm(a, sizeof a, mover_um);
-        texto_formato(MARGEN, 52, 4, C_TEXTO, C_FONDO, 5, "%s", a);
-        texto_dibujar(MARGEN + 5 * 24 + 6, 68, "mm", 2, C_TENUE, C_FONDO);
+        texto_formato(MARGEN, 52 + EXTRA_M / 2, 4, C_TEXTO, C_FONDO, 5, "%s", a);
+        texto_dibujar(MARGEN + 5 * 24 + 6, 68 + EXTRA_M / 2, "mm", 2, C_TENUE, C_FONDO);
         break;
     case 1:
         fmt_mm(a, sizeof a, m->pos_um);
-        texto_formato(MARGEN, 100, 2, C_TENUE, C_FONDO, 19, "Actual %s mm", a);
+        texto_formato(MARGEN, 100 + EXTRA_M, 2, C_TENUE, C_FONDO, 19, "Actual %s mm", a);
         break;
     case 2:
         dibujar_marca(&marca_obj_px, mover_um, V_MARCA_OBJ_Y, V_MARCA_ALTO, C_TEXTO);
@@ -514,7 +519,7 @@ static void mover_seccion(const ui_modelo_t *m, unsigned s)
 
 static void info_seccion(const ui_modelo_t *m, unsigned s)
 {
-    const int x = MARGEN, paso = 14, y0 = 32;
+    const int x = MARGEN, paso = 14 + EXTRA / 20, y0 = 32;
     int y = y0 + (int)s * paso;
 
     switch (s) {
