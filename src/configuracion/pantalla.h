@@ -1,8 +1,8 @@
 /*
- * pantalla.h — Parámetros del módulo ST7789 240×240 sin CS.
+ * pantalla.h — Parámetros del módulo ST7789 de 2" (240×320, CS fijo a GND, BL a 3V3).
  *
- * Valores verificados con este mismo módulo en Lunar Lander (perfil
- * TFT_PERFIL_SIN_CS). Diagnóstico rápido:
+ * Valores heredados de Lunar Lander (módulo sin CS, 240×240); con este módulo
+ * (CS a GND), sin verificar. Diagnóstico rápido:
  *   pantalla negra        → revisar SCK/SDA o probar TFT_SPI_MODO3 0
  *   colores invertidos    → TFT_INVERTIR 0
  *   imagen desplazada     → TFT_X_OFFSET / TFT_Y_OFFSET a 80
@@ -12,7 +12,7 @@
 #define PANTALLA_H
 
 #define TFT_ANCHO        240
-#define TFT_ALTO         240
+#define TFT_ALTO         320     /* con 240 se veía ruido debajo: la RAM del ST7789 es de 240x320 */
 
 #define TFT_SPI_MODO3    1      /* sin CS el ST7789 necesita CPOL=1, CPHA=1 */
 #define TFT_INVERTIR     1      /* panel IPS: INVON                         */

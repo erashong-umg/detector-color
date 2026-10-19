@@ -8,16 +8,17 @@ from PIL import Image
 carpeta = sys.argv[1]
 imagenes = [Image.open(a).convert("RGB") for a in sorted(glob.glob(carpeta + "/*.ppm"))]
 ESC, MARGEN = 2, 8
-LADO = 240 * ESC
+ANCHO, ALTO = imagenes[0].size if imagenes else (240, 240)
+LADO_X, LADO_Y = ANCHO * ESC, ALTO * ESC
 
 
 def montaje(lista, nombre, columnas):
     filas = (len(lista) + columnas - 1) // columnas
-    lienzo = Image.new("RGB", (columnas * (LADO + MARGEN) + MARGEN, filas * (LADO + MARGEN) + MARGEN), (70, 70, 70))
+    lienzo = Image.new("RGB", (columnas * (LADO_X + MARGEN) + MARGEN, filas * (LADO_Y + MARGEN) + MARGEN), (70, 70, 70))
     for i, im in enumerate(lista):
-        x = MARGEN + (i % columnas) * (LADO + MARGEN)
-        y = MARGEN + (i // columnas) * (LADO + MARGEN)
-        lienzo.paste(im.resize((LADO, LADO), Image.NEAREST), (x, y))
+        x = MARGEN + (i % columnas) * (LADO_X + MARGEN)
+        y = MARGEN + (i // columnas) * (LADO_Y + MARGEN)
+        lienzo.paste(im.resize((LADO_X, LADO_Y), Image.NEAREST), (x, y))
     lienzo.save(carpeta + "/" + nombre)
 
 
