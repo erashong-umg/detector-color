@@ -62,26 +62,27 @@ def comprobar():
 # (módulo, [(pin del módulo, destino, nota)], aviso)
 def modulos():
     return [
-        ("Pantalla ST7789 240×240 (sin CS)", [
+        ("Pantalla ST7789 2\" 230×240 (con CS y BL)", [
             ("GND", "GND común", ""),
             ("VCC", "3V3 de la fuente externa", ""),
-            ("SCK", destino("PIN_TFT_SCK"), "SPI0 SCK"),
+            ("SCL", destino("PIN_TFT_SCK"), "es el reloj SPI0 SCK, no I2C"),
             ("SDA", destino("PIN_TFT_MOSI"), "es MOSI (SPI0 TX), no I2C"),
             ("RES", destino("PIN_TFT_RST"), ""),
             ("DC", destino("PIN_TFT_DC"), ""),
-            ("BLK", "GND", "backlight activo en bajo: cableado fijo, siempre encendido"),
-        ], "Mismo cableado verificado en Lunar Lander. El módulo no tiene pin CS."),
+            ("CS", "GND (fijo)", "no ocupa GPIO: el módulo queda siempre seleccionado"),
+            ("BL", "3V3 (fijo)", "HIPÓTESIS: backlight activo en ALTO, siempre encendido. Si la pantalla no se ve, pasar BL a GND"),
+        ], "Pinout real del módulo: GND VCC SCL SDA RST DC CS BL. Con CS a GND se trabaja en SPI modo 3, como antes."),
 
         ("Sensor de color TCS3200", [
             ("VCC", "3V3 de la fuente externa", ""),
             ("GND", "GND común", ""),
             ("S0", "3V3 (fijo)", "S0=H, S1=L → escala 20 %. HIPÓTESIS"),
             ("S1", "GND (fijo)", "no ocupa GPIO"),
-            ("OE", "GND (fijo)", "salida siempre habilitada"),
+            ("LED", "3V3 (fijo)", "enciende los LED blancos del módulo; no ocupa GPIO"),
             ("S2", destino("PIN_TCS_S2"), "selección de filtro"),
             ("S3", destino("PIN_TCS_S3"), "selección de filtro"),
             ("OUT", destino("PIN_TCS_OUT"), "debe ir a un GPIO IMPAR: lo cuenta el PWM2 canal B"),
-        ], "Si el módulo trae pin LED o puente para los LED blancos, déjalo conectado (encendidos siempre)."),
+        ], "Módulo de 10 pines: GND OUT S2 S3 VCC / VCC S1 S0 LED GND. Los dos VCC y los dos GND están unidos entre sí."),
 
         ("IR final de carrera INICIO", [
             ("VCC", "3V3 de la fuente externa", ""),
@@ -105,7 +106,7 @@ def modulos():
         ], "Polaridades y umbrales se miden con PRUEBA_PROXIMIDAD (docs/hardware.md §10)."),
 
         ("Driver de motor TB6612FNG + motor DC", [
-            ("VM", "alimentación del MOTOR (fuente aparte)", "NO del 3V3: el TB6612 pide ≈ 4,5–13,5 V (verificar en su datasheet)"),
+            ("VM", "alimentación del MOTOR (fuente aparte)", "NO del 3V3: el TB6612 pide ≈ 4,5–13,5 V; en el banco va a 5 V (el motor solo se mueve bien por encima del 90 % de ciclo de trabajo)"),
             ("VCC", "3V3 de la fuente externa", "lógica"),
             ("GND", "GND común", "obligatoria: la masa del motor y la de la lógica deben unirse"),
             ("STBY", destino("PIN_MOTOR_STBY"), "además, resistencia de 10 kΩ a GND (ver «Componentes»)"),
@@ -116,13 +117,6 @@ def modulos():
             ("BIN1, BIN2, PWMB", "GND", "canal B sin usar"),
             ("BO1 / BO2", "sin conectar", ""),
         ], "Probar SIEMPRE con la tarea de prueba del motor y el corte de alimentación a mano."),
-
-        ("LED RGB de ÁNODO COMÚN", [
-            ("Ánodo (+)", "3V3 de la fuente externa", "pata más larga"),
-            ("R", "resistencia 150 Ω → " + destino("PIN_LED_R"), "PWM5 canal B"),
-            ("G", "resistencia 47 Ω → " + destino("PIN_LED_G"), "PWM6 canal A"),
-            ("B", "resistencia 47 Ω → " + destino("PIN_LED_B"), "PWM6 canal B"),
-        ], "Resistencias orientativas (≤ 12 mA por pin): ajustar a ojo hasta que el blanco se vea blanco."),
 
         ("Buzzer pasivo — opción A: directo", [
             ("+ (señal)", destino("PIN_BUZZER"), "PWM7 canal B"),
@@ -137,18 +131,18 @@ def modulos():
         ], "Recomendada si el buzzer suena bajo o la Pico se reinicia al sonar."),
 
         ("Botones (pulsadores, uno por función)", [
-            ("B1 · iniciar detección", destino("PIN_BOTON_1") + " ↔ GND", "un terminal al GPIO, el otro a GND"),
-            ("B2 · calibrar", destino("PIN_BOTON_2") + " ↔ GND", "pull-up interno"),
-            ("B3 · posicionar", destino("PIN_BOTON_3") + " ↔ GND", "pull-up interno"),
-            ("B4 · guardar / menú", destino("PIN_BOTON_4") + " ↔ GND", "pull-up interno"),
-        ], "Activos en bajo. Con cables largos y pulsaciones fantasma: 100 nF entre el pin y GND."),
+            ("B1 · medir (igual que el SW)", destino("PIN_BOTON_1") + " ← salida del módulo de botones", "pull-down interno"),
+            ("B2 · calibrar / abrir el menú", destino("PIN_BOTON_2") + " ← salida del módulo de botones", "pull-down interno"),
+            ("B3 · bajar en el menú", destino("PIN_BOTON_3") + " ← salida del módulo de botones", "pull-down interno"),
+            ("B4 · menú (corto) / guardar (mantenido)", destino("PIN_BOTON_4") + " ← salida del módulo de botones", "pull-down interno"),
+        ], "**Activos en ALTO**: el módulo de botones lleva una resistencia a GND y cada botón lleva su salida a 3V3 (medido en el banco: con la lógica en bajo se leían los cuatro pulsados). Con cables largos y pulsaciones fantasma: 100 nF entre el pin y GND."),
 
         ("Joystick analógico (tipo KY-023)", [
             ("VCC (+5V)", "3V3 de la fuente externa", "NUNCA 5 V: los GPIO no lo toleran"),
             ("GND", "GND común", ""),
             ("VRx / JX", destino("PIN_JOY_X"), "ADC0"),
             ("VRy / JY", destino("PIN_JOY_Y"), "ADC1"),
-            ("SW", destino("PIN_JOY_SW"), "pulsador; pull-up interno"),
+            ("SW", destino("PIN_JOY_SW"), "pulsador activo en bajo; pull-up interno; hace lo mismo que B1"),
         ], "Mantener el joystick quieto al arrancar: mide su centro en ese momento."),
     ]
 
@@ -156,7 +150,7 @@ def modulos():
 def funcion_gpio():
     """Función de cada GPIO, para la tabla ordenada por pin."""
     return {
-        "PIN_BOTON_4": ("Botón 4 · guardar/menú", "entrada, pull-up"),
+        "PIN_BOTON_4": ("Botón 4 · menú / guardar", "entrada, pull-down (activo en alto)"),
         "PIN_IR_PROX_D": ("IR proximidad · OD", "entrada"),
         "PIN_TCS_S2": ("TCS3200 · S2", "salida"),
         "PIN_TCS_S3": ("TCS3200 · S3", "salida"),
@@ -167,18 +161,15 @@ def funcion_gpio():
         "PIN_MOTOR_PWMA": ("TB6612 · PWMA", "PWM4 A"),
         "PIN_MOTOR_AIN1": ("TB6612 · AIN1", "salida"),
         "PIN_MOTOR_AIN2": ("TB6612 · AIN2", "salida"),
-        "PIN_LED_R": ("LED RGB · R", "PWM5 B"),
-        "PIN_LED_G": ("LED RGB · G", "PWM6 A"),
-        "PIN_LED_B": ("LED RGB · B", "PWM6 B"),
-        "PIN_BOTON_1": ("Botón 1 · iniciar detección", "entrada, pull-up"),
+        "PIN_BOTON_1": ("Botón 1 · medir", "entrada, pull-down (activo en alto)"),
         "PIN_BUZZER": ("Buzzer", "PWM7 B"),
         "PIN_TFT_DC": ("ST7789 · DC", "salida"),
         "PIN_TFT_RST": ("ST7789 · RES", "salida"),
         "PIN_TFT_SCK": ("ST7789 · SCK", "SPI0 SCK"),
         "PIN_TFT_MOSI": ("ST7789 · SDA", "SPI0 TX"),
-        "PIN_BOTON_2": ("Botón 2 · calibrar", "entrada, pull-up"),
-        "PIN_BOTON_3": ("Botón 3 · posicionar", "entrada, pull-up"),
-        "PIN_JOY_SW": ("Joystick · SW", "entrada, pull-up"),
+        "PIN_BOTON_2": ("Botón 2 · calibrar / menú", "entrada, pull-down (activo en alto)"),
+        "PIN_BOTON_3": ("Botón 3 · bajar en el menú", "entrada, pull-down (activo en alto)"),
+        "PIN_JOY_SW": ("Joystick · SW (= B1)", "entrada, pull-up (activo en bajo)"),
         "PIN_JOY_X": ("Joystick · JX", "ADC0"),
         "PIN_JOY_Y": ("Joystick · JY", "ADC1"),
         "PIN_IR_PROX_A": ("IR proximidad · OA", "ADC2"),
@@ -233,7 +224,7 @@ def construir():
     w("")
     w("| De | A | Nota |")
     w("|---|---|---|")
-    w("| Fuente externa **+3V3** | VCC de **todos** los módulos (ST7789, TCS3200, 3 IR, TB6612 lógica, joystick, ánodo del LED) | un solo bus de 3V3 |")
+    w("| Fuente externa **+3V3** | VCC de **todos** los módulos (ST7789, TCS3200, 3 IR, TB6612 lógica, joystick) | un solo bus de 3V3 |")
     w("| Fuente externa **GND** | GND de todos los módulos **y** un GND de la Pico (pin 3, 8, 13, 18, 23, 28 o 38) | **masa común obligatoria** |")
     w("| Fuente del **motor** (+) | **VM** del TB6612FNG | fuente aparte; su **GND también va al GND común** |")
     w("| Pico W | **USB**, o bien **VSYS (pin 39) a través de un diodo Schottky** desde la fuente externa | VSYS admite 1,8–5,5 V |")
@@ -266,7 +257,7 @@ def construir():
         if g in por_gpio:
             w("| %d | GP%d | %s | %s |" % (FISICO[g], g, por_gpio[g][0], por_gpio[g][1]))
     w("")
-    w("Quedan **todos los GPIO utilizables asignados** (GP0–GP22 y GP26–GP28). **No usar** GP23, GP24, GP25 ni GP29:")
+    w("Quedan libres **GP11, GP12 y GP13** (antes el LED RGB); el resto de los GPIO utilizables está asignado. **No usar** GP23, GP24, GP25 ni GP29:")
     w("los ocupa el chip Wi-Fi (CYW43) de la Pico W. Los pines 3, 8, 13, 18, 23, 28, 33 y 38 son GND.")
     w("")
     w("## 4. Componentes externos recomendados")
@@ -276,7 +267,6 @@ def construir():
     w("| TB6612 `STBY` ↔ GND | resistencia **10 kΩ** | mantiene el puente apagado mientras el GPIO está sin configurar (arranque) |")
     w("| TB6612 `VM` ↔ GND | electrolítico **≥ 470 µF** + cerámico 100 nF, lo más cerca del módulo | picos de arranque del motor |")
     w("| Junto a cada módulo (VCC ↔ GND) | cerámico **100 nF** | ruido del motor sobre el TCS3200 y el ADC |")
-    w("| LED RGB | **150 Ω** (R), **47 Ω** (G y B) | limitar la corriente a 3,3 V |")
     w("| Fuente → VSYS de la Pico | diodo **Schottky** | evita retroalimentar a la fuente cuando se conecta el USB |")
     w("")
     w("## 5. Diagrama del conector (Pico W vista desde arriba, USB arriba)")
