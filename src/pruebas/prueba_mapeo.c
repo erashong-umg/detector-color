@@ -1,12 +1,12 @@
 /*
- * prueba_mapeo.c — Etapa 7 del plan: del color a la posición en la escala.
+ * prueba_mapeo.c — Etapa 7 del plan: del color a su temperatura y su posición.
  *
- * Integra todo: TCS3200, calibración, mapeo (dominio/escala.c) y eje.
- * Funciona también SIN motor ni eje referenciado: entonces solo informa de
- * dónde se movería el cursor (modo simulado).
+ * Integra todo: TCS3200, calibración, clasificación cálido / frío / neutro
+ * (dominio/escala.c) y eje. Funciona también SIN motor ni eje referenciado:
+ * entonces solo informa de dónde se movería el carrito (modo simulado).
  *
  * Controles:
- *   B1  medir el color de la muestra y apuntar el cursor
+ *   B1  medir el color de la muestra y llevar el carrito a su posición
  *   B2  calibrar NEGRO  (muestra negra mate frente al sensor)
  *   B3  calibrar BLANCO (papel blanco a la misma distancia)
  *   B4  referenciar el eje (homing + calibración del recorrido)
@@ -14,17 +14,16 @@
  *   SW  arma / desarma el puente del motor
  * Orden de uso: B2 (negro) → B3 (blanco) → B1 con muestras de color.
  *
- * Pantalla: arriba, el color medido; debajo, la escala de tono de 0° a 360°
- * (la misma que debe estar impresa) con una marca BLANCA sobre ella en el
- * objetivo y una AMARILLA debajo en la posición actual del cursor. Cuadrito
- * en la esquina: verde = colores calibrados, rojo = sin calibrar.
- * El LED RGB reproduce el color medido.
+ * Pantalla: arriba, el color medido; debajo, tres zonas (cálido, neutro y
+ * frío) con una marca BLANCA sobre ellas en el objetivo y una AMARILLA debajo
+ * en la posición actual del carrito. Cuadrito en la esquina: verde = colores
+ * calibrados, rojo = sin calibrar.
  *
- * Qué comprobar con muestras impresas:
- *   - que el cursor llegue a la zona de la escala impresa de ese color;
- *   - la estabilidad: medir 10 veces la misma muestra y ver cuánto varía H
- *     (1° = 1 mm). Si varía más que ESCALA_ZONA_MUERTA_UM, subir ese valor;
- *   - blanco, gris y negro NO mueven el cursor (política acromática).
+ * Qué comprobar:
+ *   - rojo, naranja y amarillo van a la zona cálida; verde, cian y azul, a la fría;
+ *   - blanco, gris y negro van a la zona neutra (centro);
+ *   - la estabilidad: medir 10 veces la misma muestra y ver si la temperatura
+ *     cambia (los tonos cerca de 75° o 315° pueden oscilar entre cálido y frío).
  */
 #include <stdbool.h>
 #include <stdio.h>
@@ -41,7 +40,6 @@
 #include "drivers/botones.h"
 #include "drivers/buzzer.h"
 #include "drivers/joystick.h"
-#include "drivers/led.h"
 #include "drivers/st7789.h"
 #include "hw/tiempo.h"
 
@@ -63,16 +61,13 @@ static int um_a_px(int32_t um)
 
 static void dibujar_escala(void)
 {
-    static uint16_t columna[ESCALA_ALTO];
-    for (int x = 0; x < TFT_ANCHO; x++) {
-        /* El tono impreso en cada columna sigue la misma fórmula que el mapeo. */
-        int h = (ESCALA_TONO_INICIAL_GRADOS + x * 360 / TFT_ANCHO) % 360;
-        color_hsv_t hsv = { (int16_t)h, 255, 255 };
-        color_rgb_t c = color_desde_hsv(hsv);
-        for (int y = 0; y < ESCALA_ALTO; y++) {
-            columna[y] = ST7789_RGB565(c.r, c.g, c.b);
-        }
-        st7789_bloque(x, ESCALA_Y, 1, ESCALA_ALTO, columna);
+    /* Tres zonas, una por temperatura: cálido, neutro y frío. */
+    static const uint16_t zonas[3] = {
+        ST7789_RGB565(235, 110, 50), ST7789_RGB565(140, 145, 155), ST7789_RGB565(60, 130, 235)
+    };
+    int ancho = TFT_ANCHO / 3;
+    for (int i = 0; i < 3; i++) {
+        st7789_rect(i * ancho, ESCALA_Y, ancho, ESCALA_ALTO, zonas[i]);
     }
 }
 
@@ -114,9 +109,8 @@ static void mostrar_lectura(const lectura_t *l, det_resultado_t r, bool simulado
            (unsigned long)l->f.r, (unsigned long)l->f.g, (unsigned long)l->f.b,
            (unsigned long)l->f.c, l->rgb.r, l->rgb.g, l->rgb.b, l->hex,
            l->hsv.h, l->hsv.s, l->hsv.v, escala_clase_texto(l->escala.clase));
-    if (l->escala.tiene_posicion) {
-        imprimir_mm(" | objetivo ", l->escala.x_um);
-    }
+    printf(" %s", escala_temperatura_texto(l->escala.temperatura));
+    imprimir_mm(" | objetivo ", l->escala.x_um);
     printf(" -> %s%s\n", deteccion_resultado_texto(r), simulado ? " [simulado]" : "");
 }
 
@@ -126,7 +120,6 @@ void prueba_mapeo(void)
     botones_iniciar();
     joystick_iniciar();
     buzzer_iniciar();
-    led_iniciar();
     st7789_iniciar();
     carro_iniciar();
     eje_iniciar();
@@ -230,9 +223,8 @@ void prueba_mapeo(void)
                 det_resultado_t r = deteccion_apuntar(&lectura);
                 bool simulado = (r == DET_SIN_REFERENCIA || r == DET_NO_PUEDE);
                 mostrar_lectura(&lectura, r, simulado);
-                led_color(lectura.rgb);
-                objetivo_um = lectura.escala.tiene_posicion ? lectura.escala.x_um : -1;
-                buzzer_reproducir(r == DET_ACROMATICO ? &SONIDO_ALERTA : &SONIDO_CONFIRMAR);
+                objetivo_um = lectura.escala.x_um;
+                buzzer_reproducir(&SONIDO_CONFIRMAR);
             } else if (!deteccion_calibrado()) {
                 printf("Falta calibrar: B2 (negro) y B3 (blanco)\n");
                 buzzer_reproducir(&SONIDO_ALERTA);

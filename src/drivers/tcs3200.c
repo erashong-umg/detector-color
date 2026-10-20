@@ -39,6 +39,24 @@ void tcs3200_iniciar(void)
     pin_funcion(PIN_TCS_OUT, RP_FUNC_PWM);
 }
 
+static void (*hook_espera)(void);
+
+void tcs3200_poner_espera(void (*hook)(void))
+{
+    hook_espera = hook;
+}
+
+/* Espera us microsegundos llamando al hook de espera. */
+static void esperar_con_hook(uint32_t us)
+{
+    uint32_t t0 = tiempo_us();
+    while ((uint32_t)(tiempo_us() - t0) < us) {
+        if (hook_espera) {
+            hook_espera();
+        }
+    }
+}
+
 uint32_t tcs3200_medir_canal(tcs_filtro_t filtro, bool *desborde)
 {
     rp_pwm_slice_t *s     = &RP_PWM->slice[TCS_SLICE];
@@ -47,14 +65,18 @@ uint32_t tcs3200_medir_canal(tcs_filtro_t filtro, bool *desborde)
 
     pin_escribir(PIN_TCS_S2, filtros[filtro].s2);
     pin_escribir(PIN_TCS_S3, filtros[filtro].s3);
-    tiempo_esperar_us(TCS_ESPERA_FILTRO_US);
+    esperar_con_hook(TCS_ESPERA_FILTRO_US);
 
     s->ctr = 0;
     RP_PWM->intr = TCS_SLICE_BIT;           /* limpia la marca de vuelta (W1C) */
 
     uint32_t t0 = tiempo_us();
     s_set->csr = RP_PWM_CSR_EN;             /* abre la ventana */
-    while ((uint32_t)(tiempo_us() - t0) < TCS_VENTANA_US) { }
+    while ((uint32_t)(tiempo_us() - t0) < TCS_VENTANA_US) {
+        if (hook_espera) {
+            hook_espera();
+        }
+    }
     s_clr->csr = RP_PWM_CSR_EN;             /* cierra la ventana */
     uint32_t dt = tiempo_us() - t0;
 

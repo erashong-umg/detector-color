@@ -29,7 +29,6 @@
 #include "drivers/adc.h"
 #include "drivers/botones.h"
 #include "drivers/buzzer.h"
-#include "drivers/led.h"
 #include "drivers/proximidad.h"
 #include "hw/tiempo.h"
 
@@ -106,7 +105,6 @@ void prueba_proximidad(void)
     adc_iniciar();
     botones_iniciar();
     buzzer_iniciar();
-    led_iniciar();
     proximidad_iniciar();
 
     printf("\n== Diagnóstico del IR de proximidad ==\n");
@@ -152,10 +150,10 @@ void prueba_proximidad(void)
             anterior = e;
             printf("estado -> %s\n", prox_texto(e));
             switch (e) {
-            case PROX_SIN_OBJETO: led_apagar();        break;
-            case PROX_LEJOS:      led_rgb(255, 160, 0); break;
-            case PROX_OK:         led_rgb(0, 220, 80);  buzzer_tono(1500, 40); break;
-            case PROX_CERCA:      led_rgb(255, 0, 0);   break;
+            case PROX_SIN_OBJETO:                       break;
+            case PROX_LEJOS:                            break;
+            case PROX_OK:         buzzer_tono(1500, 40); break;
+            case PROX_CERCA:                            break;
             }
         }
 

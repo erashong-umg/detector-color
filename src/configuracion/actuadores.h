@@ -1,5 +1,5 @@
 /*
- * actuadores.h — Parámetros del buzzer pasivo y del LED RGB (PWM).
+ * actuadores.h — Parámetros del buzzer pasivo (PWM).
  */
 #ifndef CONFIG_ACTUADORES_H
 #define CONFIG_ACTUADORES_H
@@ -17,18 +17,5 @@
 /* Ciclo de trabajo en %: 50 = volumen máximo (onda cuadrada simétrica);
    valores menores suenan más bajo y gastan menos corriente. */
 #define BUZZER_VOLUMEN_PCT  40u
-
-/* ---- LED RGB de ánodo común (activo en bajo → canales PWM invertidos) ----
-   Divisor 16 y TOP = 255 → 125 MHz / 16 / 256 ≈ 30,5 kHz: sin parpadeo
-   visible ni en cámara. */
-#define LED_DIV_ENTERO      16u
-#define LED_TOP             255u
-
-/* Escala por canal (0..255) para igualar el brillo: con 150 Ω en el rojo y
-   47 Ω en verde/azul, el verde y el azul pueden dominar. Bajar el canal que
-   "gane" hasta que el blanco se vea blanco. */
-#define LED_ESCALA_R        255u
-#define LED_ESCALA_G        255u
-#define LED_ESCALA_B        255u
 
 #endif /* CONFIG_ACTUADORES_H */

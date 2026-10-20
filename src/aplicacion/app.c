@@ -2,11 +2,12 @@
  * app.c — Aplicación del detector de color.
  *
  * Controles (ver también ui/interfaz.h):
- *   Principal:  B1 medir · B2 menú de calibración · B3 mover cursor ·
- *               B4 corto guarda la lectura · B4 largo o SW abre el menú
+ *   Principal:  B1 medir · B2 menú de calibración (B3 no hace nada) ·
+ *               B4 mantenido guarda la lectura · B4 corto o B2 abren el menú · SW = B1
  *   Operación en curso (HOMING, MEASURE, CALIBRATE, MOVE_TO_TARGET):
- *               B4 o SW la cancelan
- *   MANUAL:     joystick X mueve el cursor · B4 o SW salen
+ *               B4 la cancela
+ *   MANUAL:     selector de color: joystick X mueve el tono por la barra cromática, Y la
+ *               saturación; el carrito va a la posición de su temperatura · B4 o B1/SW salen
  *   ERROR:      B4 largo reinicia el error
  */
 #include "aplicacion/app.h"
@@ -17,14 +18,16 @@
 #include "aplicacion/carro.h"
 #include "aplicacion/deteccion.h"
 #include "aplicacion/eje.h"
+#include "aplicacion/protocolo.h"
 #include "aplicacion/sistema.h"
 #include "configuracion/motor.h"
+#include "dominio/selector.h"
+#include "configuracion/sistema.h"
 #include "drivers/adc.h"
 #include "drivers/botones.h"
 #include "drivers/buzzer.h"
 #include "drivers/finales.h"
 #include "drivers/joystick.h"
-#include "drivers/led.h"
 #include "drivers/proximidad.h"
 #include "drivers/st7789.h"
 #include "dominio/sonidos.h"
@@ -98,14 +101,48 @@ static const char *error_corto(void)
 static const char *texto_apuntado(det_resultado_t r)
 {
     switch (r) {
-    case DET_MOVIENDO:       return "Moviendo el cursor";
-    case DET_YA_APUNTADO:    return "El cursor ya apunta aquí";
-    case DET_ACROMATICO:     return "Sin tono: el cursor no se mueve";
+    case DET_MOVIENDO:       return "Moviendo el carrito";
+    case DET_YA_APUNTADO:    return "El carrito ya está en su posición";
     case DET_SIN_REFERENCIA: return "Medido (eje sin referenciar)";
     case DET_NO_PUEDE:       return "Medido (motor desarmado)";
     case DET_NO_VALIDA:      break;
     }
     return "Lectura no válida";
+}
+
+/* ---- Modo manual: selector de color ----
+   El joystick mueve una marca por la barra cromática (X = tono, Y = saturación). El color
+   elegido se clasifica como una lectura real y, cuando su temperatura (cálido, neutro o frío)
+   se mantiene un momento, el carrito va a la posición de esa temperatura. */
+#define MANUAL_ESPERA_US  250000u       /* tiempo que debe mantenerse la temperatura antes de mover */
+
+static selector_t    selector;
+static temperatura_t manual_temp;       /* temperatura que se quiere alcanzar */
+static bool          manual_enviada;    /* el carrito ya recibió la orden para esa temperatura */
+static uint32_t      manual_t_cambio;
+
+static void manual_iniciar(void)
+{
+    selector_iniciar(&selector);
+    manual_temp = escala_mapear(selector_hsv(&selector)).temperatura;
+    manual_enviada = true;              /* al entrar no se mueve: solo cuando cambie la temperatura */
+    manual_t_cambio = tiempo_us();
+}
+
+static void manual_actualizar(const ui_entrada_t *e)
+{
+    selector_mover(&selector, e->joy_x, e->dir);
+
+    escala_t esc = escala_mapear(selector_hsv(&selector));
+    uint32_t ahora = tiempo_us();
+
+    if (esc.temperatura != manual_temp) {
+        manual_temp = esc.temperatura;
+        manual_enviada = false;
+        manual_t_cambio = ahora;
+    } else if (!manual_enviada && (uint32_t)(ahora - manual_t_cambio) >= MANUAL_ESPERA_US) {
+        manual_enviada = sistema_manual_ir_a(esc.x_um);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -119,6 +156,7 @@ static void actualizar_modelo(void)
     sistema_estado_t est = sistema_estado();
 
     modelo.armado = sistema_armado();
+    modelo.midiendo = est == SIS_MEASURE || est == SIS_CALIBRATE;
     modelo.chip_arm = modelo.armado;
     modelo.chip_ref = sistema_referenciado();
     modelo.chip_cal = deteccion_calibrado();
@@ -162,9 +200,28 @@ static void actualizar_modelo(void)
         modelo.s = l->hsv.s;
         modelo.v = l->hsv.v;
         modelo.clase = l->escala.clase;
+        modelo.temperatura = l->escala.temperatura;
     }
     modelo.objetivo_um = sistema_objetivo_um();
     modelo.historial = sistema_historial();
+
+    /* En modo manual la pantalla muestra el color elegido, como si fuera una lectura. */
+    if (est == SIS_MANUAL) {
+        color_hsv_t hsv = selector_hsv(&selector);
+        escala_t esc = escala_mapear(hsv);
+
+        modelo.hay_lectura = true;
+        modelo.rgb = color_desde_hsv(hsv);
+        color_a_hex(modelo.rgb, modelo.hex);
+        modelo.h = esc.clase == ESCALA_CROMATICO ? hsv.h : -1;
+        modelo.s = hsv.s;
+        modelo.v = hsv.v;
+        modelo.clase = esc.clase;
+        modelo.temperatura = esc.temperatura;
+        modelo.objetivo_um = esc.x_um;
+        snprintf(modelo.mensaje, sizeof modelo.mensaje, "%s", "Manual: X tono, Y satur., B1/SW salir");
+        mensaje_hasta = tiempo_us() + 500000u;
+    }
 
     /* Mientras se espera al objeto, la guía manda sobre cualquier otro mensaje. */
     if (est == SIS_MEASURE || est == SIS_CALIBRATE) {
@@ -176,30 +233,30 @@ static void actualizar_modelo(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Eventos del sistema → sonido, LED y mensaje                         */
+/* Eventos del sistema → sonido y mensaje                         */
 /* ------------------------------------------------------------------ */
 
 static void atender_eventos(void)
 {
     for (sistema_evento_t e = sistema_tomar_evento(); e != SIS_EVT_NINGUNO; e = sistema_tomar_evento()) {
+        protocolo_evento(e);
         switch (e) {
         case SIS_EVT_LISTO:
             buzzer_reproducir(&SONIDO_INICIO);
             mensaje("Calibra negro y blanco para empezar");
             break;
+        case SIS_EVT_AUTOREFERENCIANDO:
+            buzzer_reproducir(&SONIDO_MOVIENDO);
+            mensaje("Referenciando el eje (automático)...");
+            break;
         case SIS_EVT_REFERENCIADO:
-            buzzer_reproducir(&SONIDO_CONFIRMAR);
+            buzzer_reproducir(&SONIDO_HOME);
             mensaje("Eje referenciado");
             break;
         case SIS_EVT_MEDIDA:
-            buzzer_reproducir(&SONIDO_CONFIRMAR);
-            led_color(sistema_lectura()->rgb);
+            /* si el carrito se va a mover, suena su arranque en vez de la confirmación */
+            buzzer_reproducir(sistema_apuntado() == DET_MOVIENDO ? &SONIDO_MOVIENDO : &SONIDO_CONFIRMAR);
             mensaje(texto_apuntado(sistema_apuntado()));
-            break;
-        case SIS_EVT_ACROMATICO:
-            buzzer_reproducir(&SONIDO_ALERTA);
-            led_color(sistema_lectura()->rgb);
-            mensaje(texto_apuntado(DET_ACROMATICO));
             break;
         case SIS_EVT_CAL_NEGRO:
             buzzer_reproducir(&SONIDO_CONFIRMAR);
@@ -210,39 +267,49 @@ static void atender_eventos(void)
             mensaje("Blanco calibrado");
             break;
         case SIS_EVT_LLEGADA:
-            buzzer_reproducir(&SONIDO_CONFIRMAR);
-            mensaje("Cursor en posición");
+            buzzer_reproducir(&SONIDO_LLEGADA);
+            mensaje("Carrito en posición");
             break;
         case SIS_EVT_GUIA:
             if (sistema_guia() != SIS_GUIA_NINGUNA) {
                 buzzer_reproducir(&SONIDO_ALERTA);
-                led_rgb(255, 160, 0);
             } else {
                 buzzer_reproducir(&SONIDO_CLIC);
-                led_rgb(0, 200, 90);
             }
+            break;
+        case SIS_EVT_AUTOREF_REINTENTO: {
+            char buf[41];
+            buzzer_reproducir(&SONIDO_ALERTA);
+            snprintf(buf, sizeof buf, "Reintentando la referencia (%u/%u)...",
+                     (unsigned)sistema_autoref_intentos(), (unsigned)SISTEMA_AUTOREF_INTENTOS);
+            mensaje(buf);
+            break;
+        }
+        case SIS_EVT_ANALIZANDO:
+            buzzer_reproducir(&SONIDO_ANALIZANDO);
+            mensaje("Analizando...");
             break;
         case SIS_EVT_TIEMPO_AGOTADO:
             buzzer_reproducir(&SONIDO_ERROR);
-            led_apagar();
             mensaje("Sin objeto: medición cancelada");
             break;
         case SIS_EVT_CANCELADO:
             buzzer_reproducir(&SONIDO_CLIC);
-            led_apagar();
             mensaje("Cancelado");
             break;
         case SIS_EVT_LECTURA_INVALIDA:
             buzzer_reproducir(&SONIDO_ERROR);
-            mensaje("Lectura no válida (desborde)");
+            mensaje("Lectura no válida (sin señal o desborde)");
             break;
         case SIS_EVT_ERROR:
             buzzer_reproducir(&SONIDO_ERROR);
-            led_rgb(255, 0, 0);
+            break;
+        case SIS_EVT_RECUPERADO:
+            buzzer_reproducir(&SONIDO_ALERTA);
+            mensaje("Sensores recuperados: referenciando de nuevo");
             break;
         case SIS_EVT_ERROR_REINICIADO:
             buzzer_reproducir(&SONIDO_CONFIRMAR);
-            led_apagar();
             mensaje("Error reiniciado: referencia el eje");
             break;
         case SIS_EVT_NINGUNO:
@@ -269,15 +336,20 @@ static void ejecutar(const ui_orden_t *o)
     case UI_ACC_NINGUNA:
         return;
     case UI_ACC_MEDIR:       ok = sistema_medir();                 break;
-    case UI_ACC_CAL_NEGRO:   ok = sistema_calibrar(true);          break;
-    case UI_ACC_CAL_BLANCO:  ok = sistema_calibrar(false);         break;
+    case UI_ACC_CAL_NEGRO:
+    case UI_ACC_CAL_BLANCO:
+        ok = sistema_calibrar(o->accion == UI_ACC_CAL_NEGRO);
+        if (ok && o->forzar) {
+            sistema_forzar_objeto();        /* sin esperar al IR: no ve las muestras oscuras */
+        }
+        break;
     case UI_ACC_REFERENCIAR:
         ok = sistema_referenciar();
         if (ok) { mensaje("Referenciando el eje..."); }
         break;
     case UI_ACC_IR_A:
         ok = sistema_ir_a(o->um);
-        if (ok) { mensaje("Moviendo el cursor"); }
+        if (ok) { mensaje("Moviendo el carrito"); }
         break;
     case UI_ACC_GUARDAR:
         if (sistema_guardar()) {
@@ -301,7 +373,15 @@ static void ejecutar(const ui_orden_t *o)
         break;
     }
     case UI_ACC_MANUAL:
+        if (!sistema_referenciado()) {          /* necesita saber dónde está el carrito */
+            mensaje("Referencia el eje primero");
+            buzzer_reproducir(&SONIDO_ALERTA);
+            return;
+        }
         ok = sistema_manual(true);
+        if (ok) {
+            manual_iniciar();
+        }
         if (ok) { mensaje("Manual: joystick X · B4 sale"); }
         break;
     }
@@ -322,10 +402,17 @@ static ui_entrada_t leer_entradas(void)
     ui_entrada_t e = { 0 };
 
     botones_actualizar();
-    e.b1 = boton_pulsado(BOTON_1);
+    /* El SW del joystick hace lo mismo que B1: se leen los dos para consumir sus eventos. */
+    bool pulsado_b1 = boton_pulsado(BOTON_1);
+    bool pulsado_sw = boton_pulsado(BOTON_JOY);
+    e.b1 = pulsado_b1 || pulsado_sw;
+    bool largo_b1 = boton_largo(BOTON_1);
+    bool largo_sw = boton_largo(BOTON_JOY);
+    if (largo_b1 || largo_sw) {         /* B1 mantenido: el IR no ve las muestras oscuras */
+        sistema_forzar_objeto();
+    }
     e.b2 = boton_pulsado(BOTON_2);
     e.b3 = boton_pulsado(BOTON_3);
-    e.ok = boton_pulsado(BOTON_JOY);
 
     /* B4: una pulsación larga NO debe guardar una lectura al soltar. */
     (void)boton_pulsado(BOTON_4);
@@ -362,18 +449,18 @@ static void atender_entradas_de_estado(ui_entrada_t *e)
     case SIS_MEASURE:
     case SIS_CALIBRATE:
     case SIS_MOVE_TO_TARGET:
-        if (e->b4 || e->ok) {
+        if (e->b4) {
             sistema_cancelar();
-            e->b4 = e->ok = false;
+            e->b4 = false;
         }
         break;
 
     case SIS_MANUAL:
-        sistema_manual_velocidad(e->joy_x * CARRO_VEL_MAX_PRUEBA / 100);
-        if (e->b4 || e->ok) {
+        manual_actualizar(e);
+        if (e->b4 || e->b1) {
             sistema_manual(false);
             mensaje("Modo manual terminado");
-            e->b4 = e->ok = false;
+            e->b4 = e->b1 = false;
         }
         break;
 
@@ -394,22 +481,44 @@ static void atender_entradas_de_estado(ui_entrada_t *e)
 
 /* ------------------------------------------------------------------ */
 
-void app_ejecutar(void)
+/* Salida del protocolo: una línea por el puerto serie USB. */
+static void salida_usb(const char *linea)
+{
+    printf("%s\n", linea);
+    fflush(stdout);
+}
+
+void app_ejecutar(int (*leer_caracter)(void))
 {
     adc_iniciar();
     botones_iniciar();
     joystick_iniciar();         /* mide el centro: joystick quieto al arrancar */
     buzzer_iniciar();
-    led_iniciar();
     st7789_iniciar();
     sistema_iniciar();          /* eje, sensor de color, IR de proximidad y historial */
+    deteccion_poner_espera(buzzer_actualizar);  /* el sonido de análisis sigue vivo mientras se mide */
     ui_iniciar();
+    protocolo_iniciar(salida_usb);
+    if (ASISTENTE_AL_INICIAR) {
+        ui_abrir_asistente();
+    }
 
     modelo.objetivo_um = -1;
 
     uint32_t t_entrada = 0, t_dibujo = 0;
 
     while (true) {
+        /* Comandos del puerto serie: unos pocos bytes por vuelta, sin esperar. */
+        if (leer_caracter) {
+            for (int n = 0; n < 16; n++) {
+                int c = leer_caracter();
+                if (c < 0) {
+                    break;
+                }
+                protocolo_byte(c);
+            }
+        }
+
         buzzer_actualizar();
         sistema_actualizar();   /* vigila finales, rampa y tiempos: va en cada vuelta */
         atender_eventos();
@@ -426,7 +535,7 @@ void app_ejecutar(void)
             actualizar_modelo();
         }
 
-        if ((uint32_t)(tiempo_us() - t_dibujo) >= PERIODO_DIBUJO_US) {
+        if (ui_construyendo() || (uint32_t)(tiempo_us() - t_dibujo) >= PERIODO_DIBUJO_US) {
             t_dibujo = tiempo_us();
             ui_dibujar(&modelo);    /* una sección por llamada */
         }

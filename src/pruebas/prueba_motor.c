@@ -35,7 +35,6 @@
 #include "drivers/buzzer.h"
 #include "drivers/finales.h"
 #include "drivers/joystick.h"
-#include "drivers/led.h"
 #include "hw/tiempo.h"
 
 /* Pulso de prueba para saber en qué sentido gira el motor. Bloquea ≈ 200 ms
@@ -63,24 +62,12 @@ static void pulso(int velocidad, uint32_t ms)
     }
 }
 
-static void mostrar_led(void)
-{
-    if (carro_error() != CARRO_ERROR_NINGUNO) {
-        led_rgb(255, 0, 0);
-    } else if (carro_armado()) {
-        led_rgb(0, 0, 255);
-    } else {
-        led_rgb(0, 255, 0);
-    }
-}
-
 void prueba_motor(void)
 {
     adc_iniciar();
     botones_iniciar();
     joystick_iniciar();
     buzzer_iniciar();
-    led_iniciar();
     carro_iniciar();           /* motor en standby, finales leídos */
 
     printf("\n== Prueba del motor (desarmado) ==\n");
@@ -100,9 +87,8 @@ void prueba_motor(void)
     bool ult_ini = final_inicio_activo(), ult_fin = final_fin_activo();
     carro_error_t ult_error = carro_error();
     bool ult_bloq = false;
-    uint32_t t_joy = 0, t_info = 0;
+    uint32_t t_joy = 0, t_info = 0, t_finales = 0;
 
-    mostrar_led();
 
     while (true) {
         botones_actualizar();
@@ -128,7 +114,6 @@ void prueba_motor(void)
             } else {
                 printf("Error reiniciado\n");
             }
-            mostrar_led();
         }
         if (carro_bloqueado_por_final() && !ult_bloq) {
             printf("Movimiento bloqueado por final de carrera\n");
@@ -146,7 +131,6 @@ void prueba_motor(void)
                 printf("No se puede armar: %s\n", carro_error_texto(carro_error()));
                 buzzer_reproducir(&SONIDO_ERROR);
             }
-            mostrar_led();
         }
         if (boton_pulsado(BOTON_2)) {
             pulso(+30, 200);
@@ -169,6 +153,14 @@ void prueba_motor(void)
             joystick_t j;
             joystick_leer(&j);
             carro_mover(j.x * CARRO_VEL_MAX_PRUEBA / 100);
+        }
+
+        /* --- Niveles eléctricos de los finales (cada segundo, con el carrito parado) --- */
+        if (carro_velocidad_real() == 0 && (uint32_t)(tiempo_us() - t_finales) >= 1000000u) {
+            t_finales = tiempo_us();
+            printf("Finales: INICIO nivel=%d (%s)  FIN nivel=%d (%s)\n",
+                   final_inicio_crudo(), final_inicio_activo() ? "activo" : "libre",
+                   final_fin_crudo(), final_fin_activo() ? "activo" : "libre");
         }
 
         /* --- Informe mientras se mueve (cada 250 ms) --- */

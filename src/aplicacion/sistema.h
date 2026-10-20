@@ -9,7 +9,7 @@
  *       cualquiera → ERROR → (reiniciar) → IDLE
  *
  * Es el orquestador del dominio: usa el eje, el sensor de color y el IR de
- * proximidad, pero NO toca la pantalla, los botones, el buzzer ni el LED.
+ * proximidad, pero NO toca la pantalla, los botones, ni el buzzer.
  * La aplicación le da órdenes (sistema_*) y recoge eventos
  * (sistema_tomar_evento) y la guía al usuario (sistema_guia).
  *
@@ -42,17 +42,20 @@ typedef enum {
 typedef enum {
     SIS_EVT_NINGUNO,
     SIS_EVT_LISTO,              /* terminó la inicialización                  */
+    SIS_EVT_AUTOREFERENCIANDO,  /* el sistema armó el motor y empezó a referenciar solo */
+    SIS_EVT_AUTOREF_REINTENTO,  /* la referencia automática falló y se reintenta (ver sistema_autoref_intentos) */
     SIS_EVT_REFERENCIADO,       /* homing y calibración del eje terminados     */
     SIS_EVT_MEDIDA,             /* lectura válida (ver sistema_apuntado)       */
-    SIS_EVT_ACROMATICO,         /* lectura sin tono: el cursor no se mueve     */
     SIS_EVT_CAL_NEGRO,          /* negro calibrado                             */
     SIS_EVT_CAL_BLANCO,         /* blanco calibrado                            */
     SIS_EVT_LLEGADA,            /* el cursor llegó a su destino                */
     SIS_EVT_GUIA,               /* cambió la guía (ver sistema_guia)           */
+    SIS_EVT_ANALIZANDO,         /* la muestra está lista: se va a medir ahora (≈ 270 ms) */
     SIS_EVT_TIEMPO_AGOTADO,     /* no se colocó el objeto a tiempo             */
     SIS_EVT_CANCELADO,
     SIS_EVT_LECTURA_INVALIDA,   /* desborde del sensor                         */
     SIS_EVT_ERROR,
+    SIS_EVT_RECUPERADO,         /* los finales volvieron a ser coherentes: error reiniciado solo, se vuelve a referenciar */
     SIS_EVT_ERROR_REINICIADO
 } sistema_evento_t;
 
@@ -82,8 +85,10 @@ bool sistema_armar(bool armar);
 bool sistema_referenciar(void);
 bool sistema_medir(void);
 bool sistema_calibrar(bool negro);
+void sistema_forzar_objeto(void);               /* medir/calibrar ya, sin esperar al IR de proximidad */
 bool sistema_ir_a(int32_t x_um);
 bool sistema_manual(bool activar);
+bool sistema_manual_ir_a(int32_t x_um);         /* dentro de MANUAL: lleva el carrito a una posición sin salir del modo */
 void sistema_manual_velocidad(int velocidad);   /* −100..100, solo en MANUAL */
 bool sistema_guardar(void);                     /* última lectura → historial */
 void sistema_cancelar(void);                    /* aborta lo que esté en curso */
@@ -103,5 +108,6 @@ int32_t            sistema_objetivo_um(void);           /* −1 si no hay       
 const historial_t *sistema_historial(void);
 bool               sistema_armado(void);
 bool               sistema_referenciado(void);
+uint8_t            sistema_autoref_intentos(void);      /* reintentos de la referencia automática hasta ahora */
 
 #endif /* SISTEMA_H */

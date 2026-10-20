@@ -39,12 +39,13 @@
 #define EJE_TOLERANCIA_UM      1500
 
 /* Tiempo que tarda el carrito en recorrer los 350 mm a EJE_VEL_VIAJE.
-   HIPÓTESIS (8 s): medirlo con pruebas/prueba_motor.c o con la primera
+   Medido en el banco: 782 ms (VM = 5 V, EJE_VEL_VIAJE = 40, duty ≈ 94 %). Se puede ver con
+   el comando ESTADO del puerto serie (cal_ms) o con la primera
    calibración (el USB imprime "recorrido de N ms"). De este valor salen los
    tiempos máximos de movimiento, así que sin encoder es la ÚNICA protección
    si un final de carrera no se activa: el motor empujará contra el tope
    hasta que venza. Cuanto más exacto, menos tiempo empuja. */
-#define EJE_RECORRIDO_ESPERADO_MS   8000u
+#define EJE_RECORRIDO_ESPERADO_MS   1000u
 
 /* Homing: a EJE_VEL_HOMING (más lento) el recorrido completo tarda ≈ 1,3 ×. */
 #define EJE_TIMEOUT_HOMING_MS       (EJE_RECORRIDO_ESPERADO_MS * 2u)
@@ -65,8 +66,14 @@
 #endif
 #define EJE_REF_PREVIA_AHORRO_UM    20000
 
+/* Si el carrito arranca con el final FIN activo (pegado al extremo) y busca el inicio, el
+   FIN debe soltarse enseguida. Si pasado este tiempo sigue activo, el sentido del motor está
+   invertido o el carrito está atascado: se para en vez de empujar contra el tope. A la
+   velocidad de homing se separa varios mm en pocas decenas de ms. */
+#define EJE_FIN_LIBERAR_MS     400u
+
 /* Una calibración más corta que esto indica sensores mal puestos
    (p. ej. los dos finales tapados o los cables cruzados). */
-#define EJE_RECORRIDO_MIN_MS   800u
+#define EJE_RECORRIDO_MIN_MS   200u
 
 #endif /* CONFIG_EJE_H */

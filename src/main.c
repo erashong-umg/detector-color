@@ -24,6 +24,13 @@
 
 #define PRUEBA_ACTIVA       MODO_APLICACION
 
+/* Siguiente byte recibido por USB, o −1 si no hay: el protocolo serie lo lee sin esperar. */
+static int leer_usb(void)
+{
+    int c = getchar_timeout_us(0);
+    return c == PICO_ERROR_TIMEOUT ? -1 : c;
+}
+
 int main(void)
 {
     stdio_init_all();
@@ -49,7 +56,7 @@ int main(void)
 #elif PRUEBA_ACTIVA == PRUEBA_PROXIMIDAD
     prueba_proximidad();
 #elif PRUEBA_ACTIVA == MODO_APLICACION
-    app_ejecutar();
+    app_ejecutar(leer_usb);
 #else
 #error "PRUEBA_ACTIVA no válida"
 #endif

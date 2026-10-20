@@ -1,5 +1,5 @@
 /*
- * interfaz.h — Interfaz gráfica de la ST7789 (240×240): pantalla principal,
+ * interfaz.h — Interfaz gráfica de la ST7789 (240×320): pantalla principal,
  * menú, historial, mover cursor e información.
  *
  * No toca el sensor, el motor ni los botones: recibe una copia del estado del
@@ -26,7 +26,8 @@ typedef enum {
     UI_PANTALLA_MENU,
     UI_PANTALLA_HISTORIAL,
     UI_PANTALLA_MOVER,
-    UI_PANTALLA_INFO
+    UI_PANTALLA_INFO,
+    UI_PANTALLA_ASISTENTE   /* guía de inicio: referenciar, calibrar negro y blanco */
 } ui_pantalla_t;
 
 /* Estado del sistema que la interfaz muestra. Las cadenas se copian al
@@ -42,6 +43,7 @@ typedef struct {
     int16_t     h;                  /* tono 0..359, −1 sin definir                */
     uint8_t     s, v;               /* 0..255                                     */
     escala_clase_t clase;
+    temperatura_t  temperatura;     /* cálido / frío / neutro                     */
 
     int32_t  objetivo_um;           /* −1 = sin objetivo                          */
     int32_t  pos_um;                /* −1 = posición desconocida                  */
@@ -53,6 +55,7 @@ typedef struct {
     char     mensaje[41];           /* línea de mensajes (vacía = pista de uso)   */
     char     error[41];             /* vacía si no hay error                      */
 
+    bool     midiendo;              /* el sistema está midiendo o calibrando el color */
     bool     hay_negro, hay_blanco;
     uint32_t recorrido_ms;          /* calibración del eje, 0 = sin calibrar      */
 
@@ -61,10 +64,9 @@ typedef struct {
 
 /* Entradas ya interpretadas por la aplicación. */
 typedef struct {
-    bool b1, b2, b3;
+    bool b1, b2, b3;    /* b1 incluye el SW del joystick: es el mismo botón            */
     bool b4;            /* pulsación CORTA de B4, reconocida al SOLTAR        */
     bool b4_largo;      /* B4 mantenido ≥ 0,8 s                               */
-    bool ok;            /* SW del joystick                                    */
     int  dir;           /* −1 = arriba, +1 = abajo, 0 = nada (un pulso por movimiento) */
     int  joy_x;         /* −100..100, continuo (se usa en "Mover cursor")      */
 } ui_entrada_t;
@@ -85,6 +87,7 @@ typedef enum {
 typedef struct {
     ui_accion_t accion;
     int32_t     um;
+    bool        forzar;     /* CAL_*: no esperar al IR de proximidad (muestras oscuras) */
 } ui_orden_t;
 
 void ui_iniciar(void);
@@ -94,6 +97,15 @@ ui_orden_t ui_procesar(const ui_entrada_t *entrada, const ui_modelo_t *modelo);
 
 /* Pinta una sección de la pantalla actual. */
 void ui_dibujar(const ui_modelo_t *modelo);
+
+/* true mientras se está pintando una pantalla recién abierta: conviene llamar a ui_dibujar en
+   cada vuelta del bucle (cada llamada sigue costando ≤ ≈ 5 ms) en vez de esperar entre secciones,
+   para que el cambio de pantalla dure ≈ 40 ms en lugar de ≈ 100 ms y no se vea a medio pintar. */
+bool ui_construyendo(void);
+
+/* Abre el asistente de inicio. Los pasos salen del modelo (eje referenciado, negro y
+   blanco calibrados), así que no guarda estado propio: B4 largo lo omite. */
+void ui_abrir_asistente(void);
 
 ui_pantalla_t ui_pantalla(void);
 

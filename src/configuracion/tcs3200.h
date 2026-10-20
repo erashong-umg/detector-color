@@ -17,6 +17,11 @@
    Con 20 % y blanco (~100 kHz) dan ~2000 cuentas → 0,05 % de resolución. */
 #define TCS_VENTANA_US          20000u
 
+/* Por debajo de esta frecuencia en el canal claro (sin filtro) se da por hecho que el sensor
+   está desconectado o sin alimentación y la lectura no es válida. El mínimo medido en el banco,
+   con el negro delante y los LED encendidos, es ≈ 3000 Hz. */
+#define TCS_FRECUENCIA_MIN_HZ   200u
+
 /* Espera tras cambiar el filtro (S2/S3) antes de empezar a contar,
    para descartar el periodo en curso del filtro anterior.
    HIPÓTESIS conservadora: ajustar midiendo en el banco. */

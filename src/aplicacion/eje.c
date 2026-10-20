@@ -20,7 +20,9 @@ static int           manual_vel;
 static bool          fin_previo;
 static uint32_t      t_ultimo;
 static uint32_t      t_cal0;
+static uint32_t      t_busqueda0;       /* instante en que empezó la búsqueda del inicio */
 static uint32_t      duracion_cal_ms;
+static uint32_t      ultima_cal_ms;      /* última pasada de calibración, aunque haya fallado */
 
 /* Tiempo máximo de un movimiento normal: lo que tardó la calibración + 40 %. */
 static uint32_t timeout_movimiento(void)
@@ -58,6 +60,7 @@ bool eje_referenciar(void)
     pos.calibrada = false;
     manual_vel = 0;
     fin_previo = final_fin_activo();
+    t_busqueda0 = tiempo_us();
     carro_timeout_ms(EJE_TIMEOUT_HOMING_MS);
     estado = EJE_BUSCANDO_INICIO;
     return true;
@@ -158,6 +161,11 @@ static void paso_buscando_inicio(void)
         fallar(EJE_ERROR_SENTIDO_INVERTIDO);
         return;
     }
+    /* Arrancó pegado al FIN y no se suelta: sentido invertido o carrito atascado. */
+    if (fin && fin_previo && (uint32_t)(tiempo_us() - t_busqueda0) >= EJE_FIN_LIBERAR_MS * 1000u) {
+        fallar(EJE_ERROR_SENTIDO_INVERTIDO);
+        return;
+    }
     fin_previo = fin;
     carro_mover(-EJE_VEL_HOMING);
 }
@@ -166,6 +174,7 @@ static void paso_calibrando(uint32_t ahora)
 {
     if (final_fin_activo()) {
         uint32_t ms = (ahora - t_cal0) / 1000u;
+        ultima_cal_ms = ms;
         carro_frenar();
         if (ms < EJE_RECORRIDO_MIN_MS || !posicion_calibrar(&pos)) {
             fallar(EJE_ERROR_RECORRIDO_CORTO);
@@ -293,6 +302,7 @@ bool eje_quieto(void)
     return sin_orden && manual_vel == 0 && carro_velocidad_real() == 0;
 }
 uint32_t eje_recorrido_ms(void) { return duracion_cal_ms; }
+uint32_t eje_ultima_calibracion_ms(void) { return ultima_cal_ms; }
 
 const char *eje_estado_texto(eje_estado_t e)
 {

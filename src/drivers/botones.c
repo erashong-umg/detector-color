@@ -7,6 +7,7 @@
 
 typedef struct {
     uint8_t  pin;
+    bool     activo_alto;   /* true = pulsado con el pin en alto */
     bool     estable;       /* nivel aceptado: true = pulsado */
     bool     candidato;     /* última lectura cruda           */
     uint32_t t_candidato;   /* desde cuándo se lee igual      */
@@ -17,11 +18,11 @@ typedef struct {
 } boton_t;
 
 static boton_t botones[BOTON_CANTIDAD] = {
-    [BOTON_1]   = { .pin = PIN_BOTON_1 },
-    [BOTON_2]   = { .pin = PIN_BOTON_2 },
-    [BOTON_3]   = { .pin = PIN_BOTON_3 },
-    [BOTON_4]   = { .pin = PIN_BOTON_4 },
-    [BOTON_JOY] = { .pin = PIN_JOY_SW  },
+    [BOTON_1]   = { .pin = PIN_BOTON_1, .activo_alto = BOTONES_ACTIVO_ALTO },
+    [BOTON_2]   = { .pin = PIN_BOTON_2, .activo_alto = BOTONES_ACTIVO_ALTO },
+    [BOTON_3]   = { .pin = PIN_BOTON_3, .activo_alto = BOTONES_ACTIVO_ALTO },
+    [BOTON_4]   = { .pin = PIN_BOTON_4, .activo_alto = BOTONES_ACTIVO_ALTO },
+    [BOTON_JOY] = { .pin = PIN_JOY_SW,  .activo_alto = JOY_SW_ACTIVO_ALTO  },
 };
 
 void botones_iniciar(void)
@@ -30,8 +31,8 @@ void botones_iniciar(void)
 
     for (int i = 0; i < BOTON_CANTIDAD; i++) {
         boton_t *b = &botones[i];
-        pin_entrada(b->pin, PIN_PULL_UP);
-        b->estable = b->candidato = !pin_leer(b->pin);   /* activo en bajo */
+        pin_entrada(b->pin, b->activo_alto ? PIN_PULL_DOWN : PIN_PULL_UP);
+        b->estable = b->candidato = pin_leer(b->pin) == b->activo_alto;
         b->t_candidato = ahora;
     }
 }
@@ -42,7 +43,7 @@ void botones_actualizar(void)
 
     for (int i = 0; i < BOTON_CANTIDAD; i++) {
         boton_t *b = &botones[i];
-        bool lectura = !pin_leer(b->pin);
+        bool lectura = pin_leer(b->pin) == b->activo_alto;
 
         if (lectura != b->candidato) {
             b->candidato = lectura;

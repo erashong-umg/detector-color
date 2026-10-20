@@ -1,6 +1,7 @@
 #include "ui/interfaz.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "configuracion/eje.h"
 #include "configuracion/escala.h"
@@ -64,6 +65,23 @@ ui_pantalla_t ui_pantalla(void)
     return pantalla;
 }
 
+void ui_abrir_asistente(void)
+{
+    pantalla = UI_PANTALLA_ASISTENTE;
+    pantalla_nueva = true;
+    seccion = 0;
+}
+
+/* Paso del asistente según el estado del sistema: 0 referenciar el eje, 1 calibrar
+   el negro, 2 calibrar el blanco, 3 listo. */
+static int paso_asistente(const ui_modelo_t *m)
+{
+    if (!m->chip_ref)   { return 0; }
+    if (!m->hay_negro)  { return 1; }
+    if (!m->hay_blanco) { return 2; }
+    return 3;
+}
+
 /* ================================================================== */
 /* Navegación                                                          */
 /* ================================================================== */
@@ -83,7 +101,7 @@ static void entrar_mover(const ui_modelo_t *m)
 
 static ui_orden_t orden(ui_accion_t a, int32_t um)
 {
-    ui_orden_t o = { a, um };
+    ui_orden_t o = { a, um, false };
     return o;
 }
 
@@ -106,6 +124,14 @@ static ui_orden_t ejecutar_item(item_menu_t item, const ui_modelo_t *m)
     return orden(UI_ACC_NINGUNA, 0);
 }
 
+/* Navegar por listas: el joystick arriba/abajo, o B2 (arriba) y B3 (abajo). */
+static int navegacion(const ui_entrada_t *e)
+{
+    if (e->b2) { return -1; }
+    if (e->b3) { return +1; }
+    return e->dir;
+}
+
 static int rotar(int valor, int paso, int cantidad)
 {
     return (valor + paso + cantidad) % cantidad;
@@ -114,6 +140,31 @@ static int rotar(int valor, int paso, int cantidad)
 ui_orden_t ui_procesar(const ui_entrada_t *e, const ui_modelo_t *m)
 {
     switch (pantalla) {
+    case UI_PANTALLA_ASISTENTE: {
+        int paso = paso_asistente(m);
+
+        if (e->b4_largo) {                          /* omitir el asistente */
+            ir_a_pantalla(UI_PANTALLA_PRINCIPAL);
+            break;
+        }
+        if (m->midiendo) {
+            break;
+        }
+        if (paso == 0 && e->b1) {
+            return orden(UI_ACC_REFERENCIAR, 0);
+        }
+        if ((paso == 1 || paso == 2) && (e->b1 || e->b2)) {
+            ui_orden_t o = orden(paso == 1 ? UI_ACC_CAL_NEGRO : UI_ACC_CAL_BLANCO, 0);
+            /* El IR de proximidad no ve el negro: se mide sin esperarle. B2 fuerza también el blanco. */
+            o.forzar = paso == 1 || e->b2;
+            return o;
+        }
+        if (paso == 3 && e->b1) {
+            ir_a_pantalla(UI_PANTALLA_PRINCIPAL);
+        }
+        break;
+    }
+
     case UI_PANTALLA_PRINCIPAL:
         if (e->b1) {
             return orden(UI_ACC_MEDIR, 0);
@@ -121,35 +172,36 @@ ui_orden_t ui_procesar(const ui_entrada_t *e, const ui_modelo_t *m)
         if (e->b2) {
             menu_sel = M_CAL_NEGRO;
             ir_a_pantalla(UI_PANTALLA_MENU);
-        } else if (e->b3) {
-            entrar_mover(m);
-        } else if (e->b4) {
+        } else if (e->b4_largo) {              /* B4 mantenido: guardar la lectura */
             return orden(UI_ACC_GUARDAR, 0);
-        } else if (e->b4_largo || e->ok) {
+        } else if (e->b4) {                    /* B4 corto: menú */
             menu_sel = M_MEDIR;
             ir_a_pantalla(UI_PANTALLA_MENU);
         }
         break;
 
-    case UI_PANTALLA_MENU:
-        if (e->dir) {
-            menu_sel = rotar(menu_sel, e->dir, M_CANTIDAD);
+    case UI_PANTALLA_MENU: {
+        int dir = navegacion(e);
+        if (dir) {
+            menu_sel = rotar(menu_sel, dir, M_CANTIDAD);
         }
         if (e->b4 || e->b4_largo) {
             ir_a_pantalla(UI_PANTALLA_PRINCIPAL);
-        } else if (e->ok) {
+        } else if (e->b1) {
             return ejecutar_item((item_menu_t)menu_sel, m);
         }
         break;
+    }
 
     case UI_PANTALLA_HISTORIAL: {
         int n = m->historial ? historial_cantidad(m->historial) : 0;
-        if (e->dir && n > 0) {
-            hist_sel = rotar(hist_sel, e->dir, n);
+        int dir = navegacion(e);
+        if (dir && n > 0) {
+            hist_sel = rotar(hist_sel, dir, n);
         }
         if (e->b4 || e->b4_largo) {
             ir_a_pantalla(UI_PANTALLA_PRINCIPAL);
-        } else if (e->ok && n > 0) {
+        } else if (e->b1 && n > 0) {
             entrada_hist_t h;
             if (historial_obtener(m->historial, (uint8_t)hist_sel, &h) && h.x_um >= 0) {
                 ir_a_pantalla(UI_PANTALLA_PRINCIPAL);
@@ -166,14 +218,14 @@ ui_orden_t ui_procesar(const ui_entrada_t *e, const ui_modelo_t *m)
         if (mover_um > EJE_LONGITUD_UM) { mover_um = EJE_LONGITUD_UM; }
         if (e->b4 || e->b4_largo) {
             ir_a_pantalla(UI_PANTALLA_PRINCIPAL);
-        } else if (e->ok) {
+        } else if (e->b1) {
             ir_a_pantalla(UI_PANTALLA_PRINCIPAL);
             return orden(UI_ACC_IR_A, mover_um);
         }
         break;
 
     case UI_PANTALLA_INFO:
-        if (e->b4 || e->b4_largo || e->ok) {
+        if (e->b4 || e->b4_largo || e->b1) {
             ir_a_pantalla(UI_PANTALLA_PRINCIPAL);
         }
         break;
@@ -214,17 +266,20 @@ static void dibujar_pie(const char *texto)
     texto_formato(MARGEN, TFT_ALTO - 14, 1, C_TENUE, C_FONDO, 38, "%s", texto);
 }
 
+/* Tres zonas, una por temperatura; el carrito para en el centro de cada una. */
 static void dibujar_escala(int y, int alto)
 {
-    static uint16_t columna[24];
-    for (int x = 0; x < ANCHO_UTIL; x++) {
-        int h = (ESCALA_TONO_INICIAL_GRADOS + x * 360 / ANCHO_UTIL) % 360;
-        color_hsv_t hsv = { (int16_t)h, 255, 255 };
-        color_rgb_t c = color_desde_hsv(hsv);
-        for (int i = 0; i < alto; i++) {
-            columna[i] = ST7789_RGB565(c.r, c.g, c.b);
-        }
-        st7789_bloque(MARGEN + x, y, 1, alto, columna);
+    static const struct { const char *nombre; uint16_t fondo, texto; } zonas[3] = {
+        { "CALIDO", ST7789_RGB565(235, 110, 50),  ST7789_NEGRO  },
+        { "NEUTRO", ST7789_RGB565(140, 145, 155), ST7789_NEGRO  },
+        { "FRIO",   ST7789_RGB565(60, 130, 235),  ST7789_BLANCO },
+    };
+    int ancho = ANCHO_UTIL / 3;
+
+    for (int i = 0; i < 3; i++) {
+        int x = MARGEN + i * ancho;
+        st7789_rect(x, y, ancho, alto, zonas[i].fondo);
+        texto_centrado(x, ancho, y + (alto - 7) / 2, zonas[i].nombre, 1, zonas[i].texto, zonas[i].fondo);
     }
 }
 
@@ -234,6 +289,32 @@ static int um_a_px(int32_t um)
     if (px < 0) { px = 0; }
     if (px > ANCHO_UTIL - 1) { px = ANCHO_UTIL - 1; }
     return MARGEN + px;
+}
+
+/* Barra cromática: todos los tonos de 0° a 360° (rojo → amarillo → verde → cian → azul →
+   magenta → rojo), de izquierda a derecha. Va debajo de la de cálido / neutro / frío. */
+static void dibujar_columna_tono(int x, int y, int alto)
+{
+    static uint16_t columna[16];
+    color_hsv_t hsv = { (int16_t)(x * 360 / ANCHO_UTIL), 255, 255 };
+    color_rgb_t c = color_desde_hsv(hsv);
+
+    for (int i = 0; i < alto && i < 16; i++) {
+        columna[i] = ST7789_RGB565(c.r, c.g, c.b);
+    }
+    st7789_bloque(MARGEN + x, y, 1, alto, columna);
+}
+
+static void dibujar_barra_tonos(int y, int alto)
+{
+    for (int x = 0; x < ANCHO_UTIL; x++) {
+        dibujar_columna_tono(x, y, alto);
+    }
+}
+
+static int tono_a_px(int h)
+{
+    return MARGEN + h * ANCHO_UTIL / 360;
 }
 
 /* Marca vertical; se borra la anterior solo si cambió de columna. */
@@ -281,19 +362,52 @@ static void chip(int x, int y, const char *texto, bool activo, uint16_t color_ac
 #define P_AYUDA_Y       (222 + EXTRA)
 #define P_MENSAJE_Y     (232 + EXTRA)
 
+/* Barra cromática bajo la de temperaturas y su marca del tono medido. */
+#define P_TONO_Y         (P_MARCA_POS_Y + P_MARCA_ALTO + 4)
+#define P_TONO_ALTO      10
+
+static int marca_tono_px = -1;
+
+/* Cursor del tono: una línea blanca de 3 px que atraviesa la barra cromática y sobresale 3 px por
+   arriba y por abajo, para que se vea bien dónde está el tono medido o elegido. Al moverla se
+   restauran el fondo y las columnas de colores que tapaba. */
+#define CURSOR_TONO_SALIDA 3
+
+static void dibujar_cursor_tono(int *px_anterior, int px)
+{
+    if (px == *px_anterior) {
+        return;
+    }
+    if (*px_anterior >= 0) {
+        int a = *px_anterior;
+        st7789_rect(a - 1, P_TONO_Y - CURSOR_TONO_SALIDA, 3, CURSOR_TONO_SALIDA, C_FONDO);
+        st7789_rect(a - 1, P_TONO_Y + P_TONO_ALTO, 3, CURSOR_TONO_SALIDA, C_FONDO);
+        for (int x = a - 1; x <= a + 1; x++) {
+            if (x >= MARGEN && x < MARGEN + ANCHO_UTIL) {
+                dibujar_columna_tono(x - MARGEN, P_TONO_Y, P_TONO_ALTO);
+            }
+        }
+    }
+    if (px >= 0) {
+        st7789_rect(px - 1, P_TONO_Y - CURSOR_TONO_SALIDA, 3, P_TONO_ALTO + 2 * CURSOR_TONO_SALIDA, C_TEXTO);
+    }
+    *px_anterior = px;
+}
+
 static void principal_estatico(void)
 {
     dibujar_escala(P_ESCALA_Y, P_ESCALA_ALTO);
-    marca_obj_px = marca_pos_px = -1;
+    dibujar_barra_tonos(P_TONO_Y, P_TONO_ALTO);
+    marca_obj_px = marca_pos_px = marca_tono_px = -1;
 }
 
 static const char *texto_clase(escala_clase_t c)
 {
     switch (c) {
     case ESCALA_CROMATICO: return "con tono";
-    case ESCALA_NEGRO:     return "negro (sin tono)";
-    case ESCALA_BLANCO:    return "blanco (sin tono)";
-    case ESCALA_GRIS:      return "gris (sin tono)";
+    case ESCALA_NEGRO:     return "negro";
+    case ESCALA_BLANCO:    return "blanco";
+    case ESCALA_GRIS:      return "gris";
     }
     return "";
 }
@@ -321,7 +435,9 @@ static void principal_seccion(const ui_modelo_t *m, unsigned s)
             uint16_t t = contraste(m->rgb);
             st7789_rect(MARGEN, P_MUESTRA_Y, ANCHO_UTIL, P_MUESTRA_ALTO, c);
             texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 18 + EXTRA_M / 2, m->hex, 3, t, c);
-            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 56 + EXTRA_M, texto_clase(m->clase), 1, t, c);
+            char clase[24];
+            snprintf(clase, sizeof clase, "%s: %s", texto_clase(m->clase), escala_temperatura_texto(m->temperatura));
+            texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 56 + EXTRA_M, clase, 1, t, c);
         } else {
             st7789_rect(MARGEN, P_MUESTRA_Y, ANCHO_UTIL, P_MUESTRA_ALTO, C_PANEL);
             texto_centrado(MARGEN, ANCHO_UTIL, P_MUESTRA_Y + 20 + EXTRA_M / 2, "SIN LECTURA", 2, C_TENUE, C_PANEL);
@@ -366,24 +482,87 @@ static void principal_seccion(const ui_modelo_t *m, unsigned s)
     case 4: /* marcas sobre la escala */
         dibujar_marca(&marca_obj_px, m->objetivo_um, P_MARCA_OBJ_Y, P_MARCA_ALTO, C_TEXTO);
         dibujar_marca(&marca_pos_px, m->pos_um, P_MARCA_POS_Y, P_MARCA_ALTO, C_AVISO);
+        /* tono medido sobre la barra cromática; sin marca en colores sin tono */
+        dibujar_cursor_tono(&marca_tono_px, (m->hay_lectura && m->h >= 0) ? tono_a_px(m->h) : -1);
         break;
 
     default: /* estado del eje, sensores, ayuda y mensaje */
         texto_formato(MARGEN, P_ESTADO_Y, 1, C_TENUE, C_FONDO, 38, "Eje:%s  IR:%c%c  Prox:%s",
                       m->eje, m->ir_inicio ? 'I' : '-', m->ir_fin ? 'F' : '-',
                       m->prox[0] ? m->prox : "--");
-        texto_formato(MARGEN, P_AYUDA_Y, 1, C_TENUE, C_FONDO, 38, "B1 Medir B2 Calib B3 Mover B4 Guardar");
+        texto_formato(MARGEN, P_AYUDA_Y, 1, C_TENUE, C_FONDO, 38, "B1 Medir B2 Calib B4 largo: Guardar");
         if (m->error[0]) {
             texto_formato(MARGEN, P_MENSAJE_Y, 1, C_ERROR, C_FONDO, 38, "%s", m->error);
         } else if (m->mensaje[0]) {
             texto_formato(MARGEN, P_MENSAJE_Y, 1, C_ACENTO, C_FONDO, 38, "%s", m->mensaje);
         } else {
-            texto_formato(MARGEN, P_MENSAJE_Y, 1, C_TENUE, C_FONDO, 38, "SW o B4 largo: menú");
+            texto_formato(MARGEN, P_MENSAJE_Y, 1, C_TENUE, C_FONDO, 38, "B2 o B4: menú  B4 largo: guardar");
         }
         break;
     }
 }
 #define PRINCIPAL_SECCIONES 6
+
+/* Cada sección de la pantalla principal se repinta solo si cambió lo que muestra.
+   Repintar sin cambios hacía parpadear la barra de estado y la tarjeta del color
+   (se pinta el fondo y luego el texto encima, en cada ciclo). */
+#define FIRMAS_MAX 24
+static uint32_t firma_seccion[FIRMAS_MAX];
+static bool     firma_valida[FIRMAS_MAX];
+
+static uint32_t mezclar(uint32_t h, const void *datos, size_t n)
+{
+    const uint8_t *p = datos;
+    while (n--) {
+        h ^= *p++;
+        h *= 16777619u;
+    }
+    return h;
+}
+
+#define MEZCLAR(h, x)      mezclar((h), &(x), sizeof(x))
+#define MEZCLAR_TEXTO(h, t) mezclar((h), (t), strlen(t))
+
+static uint32_t firma_principal(const ui_modelo_t *m, unsigned s)
+{
+    uint32_t h = 2166136261u;
+
+    switch (s) {
+    case 0:
+        h = MEZCLAR_TEXTO(h, m->estado);
+        h = MEZCLAR(h, m->estado_color);
+        h = MEZCLAR(h, m->chip_arm); h = MEZCLAR(h, m->chip_ref);
+        h = MEZCLAR(h, m->chip_cal); h = MEZCLAR(h, m->chip_wifi);
+        break;
+    case 1:
+        h = MEZCLAR(h, m->hay_lectura);
+        h = MEZCLAR(h, m->rgb);
+        h = MEZCLAR_TEXTO(h, m->hex);
+        h = MEZCLAR(h, m->clase);
+        h = MEZCLAR(h, m->temperatura);
+        break;
+    case 2:
+        h = MEZCLAR(h, m->hay_lectura);
+        h = MEZCLAR(h, m->rgb);
+        h = MEZCLAR(h, m->h); h = MEZCLAR(h, m->s); h = MEZCLAR(h, m->v);
+        break;
+    case 3:
+    case 4:
+        h = MEZCLAR(h, m->pos_um);
+        h = MEZCLAR(h, m->objetivo_um);
+        h = MEZCLAR(h, m->hay_lectura);
+        h = MEZCLAR(h, m->h);
+        break;
+    default:
+        h = MEZCLAR_TEXTO(h, m->eje);
+        h = MEZCLAR(h, m->ir_inicio); h = MEZCLAR(h, m->ir_fin);
+        h = MEZCLAR_TEXTO(h, m->prox);
+        h = MEZCLAR_TEXTO(h, m->error);
+        h = MEZCLAR_TEXTO(h, m->mensaje);
+        break;
+    }
+    return h;
+}
 
 /* ================================================================== */
 /* Menú                                                                */
@@ -409,7 +588,7 @@ static const char *nombre_item(item_menu_t i, const ui_modelo_t *m)
 static void menu_seccion(const ui_modelo_t *m, unsigned s)
 {
     if (s >= M_CANTIDAD) {
-        dibujar_pie("Joystick: elegir  SW: ok  B4: salir");
+        dibujar_pie("B2/B3: elegir  B1/SW: ok  B4: salir");
         return;
     }
     bool sel = (int)s == menu_sel;
@@ -431,13 +610,13 @@ static void historial_seccion(const ui_modelo_t *m, unsigned s)
     int n = m->historial ? historial_cantidad(m->historial) : 0;
 
     if (s >= H_FILAS) {
-        dibujar_pie(n > 0 ? "SW: ir a esa posición  B4: volver" : "B4: volver");
+        dibujar_pie(n > 0 ? "B2/B3: elegir  B1: ir  B4: volver" : "B4: volver");
         return;
     }
     if (n == 0) {
         if (s == 2) {
             texto_centrado(0, TFT_ANCHO, 80 + EXTRA_M, "Sin lecturas", 2, C_TENUE, C_FONDO);
-            texto_centrado(0, TFT_ANCHO, 106 + EXTRA_M, "guarda con B4 al medir", 1, C_TENUE, C_FONDO);
+            texto_centrado(0, TFT_ANCHO, 106 + EXTRA_M, "guarda con B4 largo al medir", 1, C_TENUE, C_FONDO);
         }
         return;
     }
@@ -507,7 +686,7 @@ static void mover_seccion(const ui_modelo_t *m, unsigned s)
         dibujar_marca(&marca_pos_px, m->pos_um, V_MARCA_POS_Y, V_MARCA_ALTO, C_AVISO);
         break;
     default:
-        dibujar_pie("Joystick X: ajustar  SW: ir  B4: no");
+        dibujar_pie("Joystick X: ajustar  B1: ir  B4: no");
         break;
     }
 }
@@ -555,18 +734,100 @@ static void info_seccion(const ui_modelo_t *m, unsigned s)
                       m->error[0] ? m->error : "Sin errores");
         break;
     case 8:
-        texto_formato(x, y + 6, 1, C_TENUE, C_FONDO, 38, "Firmware v1.0 - RP2040 por registros");
+        texto_formato(x, y + 6, 1, C_TENUE, C_FONDO, 38, "Firmware v2.0 - RP2040 por registros");
         break;
+    case 9:
+        texto_formato(x, TFT_ALTO - 108, 1, C_ACENTO, C_FONDO, 38, "Detector de color - Grupo 1");
+        break;
+    case 10: case 11: case 12: case 13: case 14: {
+        static const char *const integrantes[5] = {
+            "Erick Orlando Rashon Gonzalez",
+            "Werner Josue Ortiz Abdalla",
+            "Brayan Kenet Rivera Quinilla",
+            "Wilder Alfonso Castillo Salguero",
+            "Marco Tulio Pineda Recinos",
+        };
+        texto_formato(x, TFT_ALTO - 94 + ((int)s - 10) * 12, 1, C_TEXTO, C_FONDO, 38, "%s", integrantes[s - 10]);
+        break;
+    }
     default:
-        dibujar_pie("B4 o SW: volver");
+        dibujar_pie("B1 o B4: volver");
         break;
     }
 }
-#define INFO_SECCIONES 10
+#define INFO_SECCIONES 16
 
 /* ================================================================== */
 /* Orquestación del dibujo                                             */
 /* ================================================================== */
+
+/* ================================================================== */
+/* Asistente de inicio                                                 */
+/* ================================================================== */
+
+#define ASISTENTE_SECCIONES 5
+
+static uint32_t firma_asistente(const ui_modelo_t *m, unsigned s)
+{
+    uint32_t h = 2166136261u;
+    int paso = paso_asistente(m);
+
+    h = MEZCLAR(h, paso);
+    h = MEZCLAR(h, s);
+    h = MEZCLAR(h, m->midiendo);
+    h = MEZCLAR_TEXTO(h, m->estado);
+    h = MEZCLAR_TEXTO(h, m->error);
+    h = MEZCLAR_TEXTO(h, m->mensaje);
+    return h;
+}
+
+static void asistente_seccion(const ui_modelo_t *m, unsigned s)
+{
+    static const char *const titulo[4] = { "REFERENCIAR EJE", "CALIBRAR NEGRO", "CALIBRAR BLANCO", "LISTO" };
+    static const char *const texto[4][3] = {
+        { "El carrito busca el INICIO y",   "mide el recorrido del eje.",  "No lo toques. B1/SW: empezar ya" },
+        { "Pon la muestra NEGRA mate a la", "distancia de medir.",         "Pulsa B1 o SW para calibrar." },
+        { "Pon el papel BLANCO a la misma", "distancia que el negro.",     "Pulsa B1 o SW para calibrar." },
+        { "Calibración completa.",          "Ya puedes medir colores.",    "Pulsa B1 o SW para empezar." },
+    };
+    int paso = paso_asistente(m);
+
+    switch (s) {
+    case 0:
+        if (paso == 3) {
+            texto_formato(MARGEN, 34, 1, C_OK, C_FONDO, 38, "ASISTENTE COMPLETADO");
+        } else {
+            texto_formato(MARGEN, 34, 1, C_ACENTO, C_FONDO, 38, "PASO %d DE 3", paso + 1);
+        }
+        break;
+    case 1:
+        texto_formato(MARGEN, 56 + EXTRA / 4, 2, paso == 3 ? C_OK : C_TEXTO, C_FONDO, 19, "%s", titulo[paso]);
+        break;
+    case 2:
+        for (int i = 0; i < 3; i++) {
+            texto_formato(MARGEN, 90 + EXTRA / 4 + i * 16, 1, C_TEXTO, C_FONDO, 38, "%s", texto[paso][i]);
+        }
+        break;
+    case 3: {
+        const char *estado = m->midiendo ? "Analizando..." : m->estado;
+        texto_formato(MARGEN, 150 + EXTRA / 3, 1, C_TENUE, C_FONDO, 38, "Estado: %s", estado);
+        if (m->error[0]) {
+            texto_formato(MARGEN, 166 + EXTRA / 3, 1, C_ERROR, C_FONDO, 38, "%s", m->error);
+        } else {
+            texto_formato(MARGEN, 166 + EXTRA / 3, 1, C_ACENTO, C_FONDO, 38, "%s", m->mensaje);
+        }
+        break;
+    }
+    default:
+        if (paso == 1 || paso == 2) {
+            texto_formato(MARGEN, TFT_ALTO - 30, 1, C_TENUE, C_FONDO, 38, "B2: calibrar sin esperar al IR");
+        } else {
+            texto_formato(MARGEN, TFT_ALTO - 30, 1, C_TENUE, C_FONDO, 38, "%s", "");
+        }
+        texto_formato(MARGEN, TFT_ALTO - 16, 1, C_TENUE, C_FONDO, 38, "B4 largo: omitir el asistente");
+        break;
+    }
+}
 
 static const char *titulo_pantalla(void)
 {
@@ -575,8 +836,68 @@ static const char *titulo_pantalla(void)
     case UI_PANTALLA_HISTORIAL: return "Historial";
     case UI_PANTALLA_MOVER:     return "Mover cursor";
     case UI_PANTALLA_INFO:      return "Información";
+    case UI_PANTALLA_ASISTENTE: return "Asistente de inicio";
     default:                    return "";
     }
+}
+
+/* Firma común del menú, el historial, mover e información: cambia si cambia cualquier
+   cosa que esas pantallas muestran o su selección. Así no se repintan sin necesidad. */
+static uint32_t firma_pantalla(const ui_modelo_t *m)
+{
+    uint32_t h = 2166136261u;
+    unsigned n_hist = m->historial ? historial_cantidad(m->historial) : 0u;
+
+    h = MEZCLAR(h, pantalla);
+    h = MEZCLAR(h, menu_sel);
+    h = MEZCLAR(h, hist_sel);
+    h = MEZCLAR(h, mover_um);
+    h = MEZCLAR(h, n_hist);
+    h = MEZCLAR(h, m->pos_um);
+    h = MEZCLAR(h, m->objetivo_um);
+    h = MEZCLAR(h, m->armado);
+    h = MEZCLAR(h, m->hay_negro);
+    h = MEZCLAR(h, m->hay_blanco);
+    h = MEZCLAR(h, m->recorrido_ms);
+    h = MEZCLAR(h, m->ir_inicio);
+    h = MEZCLAR(h, m->ir_fin);
+    h = MEZCLAR_TEXTO(h, m->eje);
+    h = MEZCLAR_TEXTO(h, m->estado);
+    h = MEZCLAR_TEXTO(h, m->prox);
+    h = MEZCLAR_TEXTO(h, m->error);
+    return h;
+}
+
+/* ¿Hay que pintar esta sección? Solo si su firma cambió desde la última vez. */
+static bool seccion_cambiada(uint32_t f)
+{
+    if (firma_valida[seccion] && firma_seccion[seccion] == f) {
+        return false;
+    }
+    firma_seccion[seccion] = f;
+    firma_valida[seccion] = true;
+    return true;
+}
+
+/* Secciones de la pantalla actual, para saber cuántas hay que pintar al abrirla. */
+static unsigned secciones_pantalla(void)
+{
+    switch (pantalla) {
+    case UI_PANTALLA_PRINCIPAL: return PRINCIPAL_SECCIONES;
+    case UI_PANTALLA_ASISTENTE: return ASISTENTE_SECCIONES;
+    case UI_PANTALLA_MENU:      return MENU_SECCIONES;
+    case UI_PANTALLA_HISTORIAL: return HISTORIAL_SECCIONES;
+    case UI_PANTALLA_MOVER:     return MOVER_SECCIONES;
+    case UI_PANTALLA_INFO:      return INFO_SECCIONES;
+    }
+    return 1;
+}
+
+static unsigned construccion;       /* secciones que faltan por pintar tras abrir una pantalla */
+
+bool ui_construyendo(void)
+{
+    return pantalla_nueva || construccion > 0;
 }
 
 void ui_dibujar(const ui_modelo_t *m)
@@ -590,16 +911,54 @@ void ui_dibujar(const ui_modelo_t *m)
         if (pantalla == UI_PANTALLA_PRINCIPAL) { principal_estatico(); }
         if (pantalla == UI_PANTALLA_MOVER)     { mover_estatico(); }
         seccion = 0;
+        memset(firma_valida, 0, sizeof firma_valida);
+        construccion = secciones_pantalla();
         return;     /* el borrado ya costó ≈ 15 ms: lo demás, en las próximas llamadas */
     }
 
     unsigned total = 1;
     switch (pantalla) {
-    case UI_PANTALLA_PRINCIPAL: total = PRINCIPAL_SECCIONES; principal_seccion(m, seccion); break;
-    case UI_PANTALLA_MENU:      total = MENU_SECCIONES;      menu_seccion(m, seccion);      break;
-    case UI_PANTALLA_HISTORIAL: total = HISTORIAL_SECCIONES; historial_seccion(m, seccion); break;
-    case UI_PANTALLA_MOVER:     total = MOVER_SECCIONES;     mover_seccion(m, seccion);     break;
-    case UI_PANTALLA_INFO:      total = INFO_SECCIONES;      info_seccion(m, seccion);      break;
+    case UI_PANTALLA_PRINCIPAL:
+        total = PRINCIPAL_SECCIONES;
+        {
+            uint32_t f = firma_principal(m, seccion);
+            if (!firma_valida[seccion] || f != firma_seccion[seccion]) {
+                principal_seccion(m, seccion);
+                firma_seccion[seccion] = f;
+                firma_valida[seccion] = true;
+            }
+        }
+        break;
+    case UI_PANTALLA_ASISTENTE:
+        total = ASISTENTE_SECCIONES;
+        {
+            uint32_t f = firma_asistente(m, seccion);
+            if (!firma_valida[seccion] || f != firma_seccion[seccion]) {
+                asistente_seccion(m, seccion);
+                firma_seccion[seccion] = f;
+                firma_valida[seccion] = true;
+            }
+        }
+        break;
+    case UI_PANTALLA_MENU:
+        total = MENU_SECCIONES;
+        if (seccion_cambiada(firma_pantalla(m))) { menu_seccion(m, seccion); }
+        break;
+    case UI_PANTALLA_HISTORIAL:
+        total = HISTORIAL_SECCIONES;
+        if (seccion_cambiada(firma_pantalla(m))) { historial_seccion(m, seccion); }
+        break;
+    case UI_PANTALLA_MOVER:
+        total = MOVER_SECCIONES;
+        if (seccion_cambiada(firma_pantalla(m))) { mover_seccion(m, seccion); }
+        break;
+    case UI_PANTALLA_INFO:
+        total = INFO_SECCIONES;
+        if (seccion_cambiada(firma_pantalla(m))) { info_seccion(m, seccion); }
+        break;
     }
     seccion = (seccion + 1) % total;
+    if (construccion > 0) {
+        construccion--;
+    }
 }

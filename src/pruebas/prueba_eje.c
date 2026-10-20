@@ -35,26 +35,11 @@
 #include "drivers/botones.h"
 #include "drivers/buzzer.h"
 #include "drivers/joystick.h"
-#include "drivers/led.h"
 #include "hw/tiempo.h"
 
 #define PASEO_A_UM   60000
 #define PASEO_B_UM   290000
 #define PASEO_VIAJES 8
-
-static void mostrar_led(void)
-{
-    if (eje_estado() == EJE_ERROR) {
-        led_rgb(255, 0, 0);
-    } else if (eje_estado() == EJE_BUSCANDO_INICIO || eje_estado() == EJE_CALIBRANDO ||
-               eje_estado() == EJE_MOVIENDO) {
-        led_rgb(255, 160, 0);
-    } else if (carro_armado()) {
-        led_rgb(0, 0, 255);
-    } else {
-        led_rgb(0, 255, 0);
-    }
-}
 
 static void imprimir_pos(const char *etiqueta)
 {
@@ -72,7 +57,6 @@ void prueba_eje(void)
     botones_iniciar();
     joystick_iniciar();
     buzzer_iniciar();
-    led_iniciar();
     carro_iniciar();
     eje_iniciar();
 
@@ -92,7 +76,6 @@ void prueba_eje(void)
 
     eje_estado_t ult_estado = eje_estado();
     uint32_t t_joy = 0, t_info = 0;
-    mostrar_led();
 
     while (true) {
         botones_actualizar();
@@ -119,7 +102,6 @@ void prueba_eje(void)
                 paseo_restante = 0;
             }
             ult_estado = eje_estado();
-            mostrar_led();
         }
 
         /* --- Paseo de repetibilidad: encadena viajes al llegar --- */
@@ -146,14 +128,15 @@ void prueba_eje(void)
                 printf("No se puede armar: %s\n", carro_error_texto(carro_error()));
                 buzzer_reproducir(&SONIDO_ERROR);
             }
-            mostrar_led();
         }
         if (boton_pulsado(BOTON_2)) {
             if (eje_referenciar()) {
                 printf("Referenciando: buscando el inicio...\n");
                 paseo_restante = 0;
             } else {
-                printf("No se puede referenciar: armar primero (B1) o reiniciar el error\n");
+                printf("No se puede referenciar: puente %s, error del carro: %s, error del eje: %s\n",
+                       carro_armado() ? "ARMADO" : "desarmado (armar con B1)",
+                       carro_error_texto(carro_error()), eje_error_texto(eje_error()));
                 buzzer_reproducir(&SONIDO_ALERTA);
             }
         }
@@ -187,7 +170,6 @@ void prueba_eje(void)
                 printf("El error persiste: %s\n", carro_error_texto(carro_error()));
                 buzzer_reproducir(&SONIDO_ERROR);
             }
-            mostrar_led();
         }
 
         /* --- Joystick: jog manual (cada 20 ms) --- */

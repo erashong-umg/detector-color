@@ -29,6 +29,11 @@ typedef struct {
 
 void tcs3200_iniciar(void);
 
+/* Función que se llama sin parar mientras la medición espera (filtro y ventana de conteo).
+   Sirve para que algo breve siga vivo durante los ≈ 90 ms que bloquea: por ejemplo el
+   secuenciador del buzzer. Debe tardar pocos µs. NULL = ninguna. */
+void tcs3200_poner_espera(void (*hook)(void));
+
 /* Mide un solo canal. Devuelve la frecuencia en Hz; *desborde = true si el
    contador de 16 bits dio la vuelta (la lectura no es válida). */
 uint32_t tcs3200_medir_canal(tcs_filtro_t filtro, bool *desborde);

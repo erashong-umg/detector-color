@@ -66,5 +66,6 @@ bool    eje_en_destino(void);       /* LISTO */
    eje_actualizar) solo son seguras en ese caso. */
 bool    eje_quieto(void);
 uint32_t eje_recorrido_ms(void);    /* duración medida de la calibración */
+uint32_t eje_ultima_calibracion_ms(void);   /* la última pasada INICIO→FIN medida, aunque haya fallado (diagnóstico) */
 
 #endif /* EJE_LINEAL_H */

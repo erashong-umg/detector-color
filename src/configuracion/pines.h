@@ -15,7 +15,7 @@
 #include <stdint.h>
 
 /* ------------------------------------------------------------------ */
-/* Pantalla ST7789 240×240 sin CS — VERIFICADO en Lunar Lander          */
+/* Pantalla ST7789 240×320, CS a GND (GMT020-02)                    */
 /* BLK cableado fijo a GND (backlight activo en bajo, siempre encendido)*/
 /* ------------------------------------------------------------------ */
 #define PIN_TFT_DC        16u
@@ -25,7 +25,7 @@
 
 /* ------------------------------------------------------------------ */
 /* TCS3200                                                             */
-/* S0/S1 cableados fijos (escala de frecuencia), OE a GND.             */
+/* S0/S1 cableados fijos (escala de frecuencia), LED a 3V3.            */
 /* OUT entra por el canal B de una slice PWM en modo contador de       */
 /* flancos: la frecuencia se mide por hardware, sin interrupciones.    */
 /* ------------------------------------------------------------------ */
@@ -56,24 +56,12 @@
 #define PIN_MOTOR_AIN2    10u
 
 /* ------------------------------------------------------------------ */
-/* LED RGB de ÁNODO COMÚN — confirmado                                 */
-/* Ánodo a +3V3, cada cátodo → resistencia → GPIO. Activo en bajo: se  */
-/* enciende con el pin a 0. El driver activa A_INV/B_INV en el PWM     */
-/* para que duty 100 % = brillo máximo.                                */
-/* R en slice 5, G/B en slice 6: comparten frecuencia, no hay problema */
-/* ------------------------------------------------------------------ */
-#define PIN_LED_R         11u   /* PWM5 B                            */
-#define PIN_LED_G         12u   /* PWM6 A                            */
-#define PIN_LED_B         13u   /* PWM6 B                            */
-#define LED_ANODO_COMUN   1
-
-/* ------------------------------------------------------------------ */
 /* Buzzer pasivo — slice propia porque cambia de frecuencia (TOP/DIV)  */
 /* ------------------------------------------------------------------ */
 #define PIN_BUZZER        15u   /* PWM7 B (igual que Lunar Lander)   */
 
 /* ------------------------------------------------------------------ */
-/* Botones (activos en bajo, pull-up interno + el del módulo)          */
+/* Botones (B1..B4 activos en alto; SW del joystick en bajo)           */
 /* ------------------------------------------------------------------ */
 #define PIN_BOTON_1       14u   /* Iniciar detección */
 #define PIN_BOTON_2       20u   /* Calibrar         */
@@ -88,7 +76,7 @@
 #define PIN_JOY_SW        22u   /* igual que Lunar Lander */
 
 /* ------------------------------------------------------------------ */
-/* Libres: ninguno. Los 26 GPIO usables están asignados.              */
+/* Libres: GP11, GP12 y GP13 (antes el LED RGB, ya retirado).          */
 /* Reservados por el CYW43 en la Pico W — NO USAR:                     */
 /*   GP23 WL_ON, GP24 WL_D, GP25 WL_CS, GP29 WL_CLK / ADC3 (VSYS/3)    */
 /* ------------------------------------------------------------------ */
@@ -109,7 +97,7 @@
     PIN_M(PIN_IR_PROX_A) OP PIN_M(PIN_IR_PROX_D) OP                                          \
     PIN_M(PIN_MOTOR_STBY) OP PIN_M(PIN_MOTOR_PWMA) OP PIN_M(PIN_MOTOR_AIN1) OP               \
     PIN_M(PIN_MOTOR_AIN2) OP                                                                 \
-    PIN_M(PIN_LED_R) OP PIN_M(PIN_LED_G) OP PIN_M(PIN_LED_B) OP PIN_M(PIN_BUZZER) OP         \
+    PIN_M(PIN_BUZZER) OP                                                                     \
     PIN_M(PIN_BOTON_1) OP PIN_M(PIN_BOTON_2) OP PIN_M(PIN_BOTON_3) OP PIN_M(PIN_BOTON_4) OP  \
     PIN_M(PIN_JOY_X) OP PIN_M(PIN_JOY_Y) OP PIN_M(PIN_JOY_SW)
 
@@ -138,16 +126,12 @@ _Static_assert(PIN_IR_PROX_A >= 26 && PIN_IR_PROX_A <= 28,
 _Static_assert((PIN_TCS_OUT & 1u) == 1u, "pines.h: PIN_TCS_OUT debe ser impar (canal B)");
 
 /* Slices PWM: cada función con frecuencia propia necesita su slice */
-#define SLICES_LED  ((1u << PWM_SLICE(PIN_LED_R)) | (1u << PWM_SLICE(PIN_LED_G)) | \
-                     (1u << PWM_SLICE(PIN_LED_B)))
 #define SLICE_M(p)  (1u << PWM_SLICE(p))
 
 _Static_assert((SLICE_M(PIN_TCS_OUT) &
-                (SLICES_LED | SLICE_M(PIN_BUZZER) | SLICE_M(PIN_MOTOR_PWMA))) == 0,
+                (SLICE_M(PIN_BUZZER) | SLICE_M(PIN_MOTOR_PWMA))) == 0,
                "pines.h: la slice del TCS3200 (contador) se comparte con otra salida PWM");
-_Static_assert((SLICE_M(PIN_BUZZER) & (SLICES_LED | SLICE_M(PIN_MOTOR_PWMA))) == 0,
+_Static_assert((SLICE_M(PIN_BUZZER) & SLICE_M(PIN_MOTOR_PWMA)) == 0,
                "pines.h: la slice del buzzer se comparte con otra salida PWM");
-_Static_assert((SLICE_M(PIN_MOTOR_PWMA) & SLICES_LED) == 0,
-               "pines.h: la slice del motor se comparte con el LED RGB");
 
 #endif /* PINES_H */

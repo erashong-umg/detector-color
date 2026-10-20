@@ -2,9 +2,15 @@
 
 #include "aplicacion/eje.h"
 #include "configuracion/escala.h"
+#include "configuracion/tcs3200.h"
 #include "drivers/tcs3200.h"
 
 static color_calibracion_t cal;
+
+void deteccion_poner_espera(void (*hook)(void))
+{
+    tcs3200_poner_espera(hook);
+}
 
 void deteccion_iniciar(void)
 {
@@ -28,15 +34,16 @@ static bool medir_promedio(color_frecuencias_t *f)
     f->g = (uint32_t)(g / DETECCION_MUESTRAS);
     f->b = (uint32_t)(b / DETECCION_MUESTRAS);
     f->c = (uint32_t)(c / DETECCION_MUESTRAS);
-    return true;
+    /* Sin señal en el canal claro: el sensor está desconectado o sin alimentación. */
+    return f->c >= TCS_FRECUENCIA_MIN_HZ;
 }
 
 bool deteccion_medir(lectura_t *l)
 {
     l->valida = false;
     l->escala.clase = ESCALA_NEGRO;
-    l->escala.tiene_posicion = false;
-    l->escala.x_um = 0;
+    l->escala.temperatura = TEMP_NEUTRO;
+    l->escala.x_um = -1;
 
     /* Medir bloquea ≈ 270 ms sin vigilar los finales: solo con el carrito parado. */
     if (!eje_quieto() || !medir_promedio(&l->f)) {
@@ -47,7 +54,7 @@ bool deteccion_medir(lectura_t *l)
     }
     color_a_hex(l->rgb, l->hex);
     l->hsv = color_a_hsv(l->rgb);
-    l->escala = escala_mapear(l->hsv, eje_posicion_um());
+    l->escala = escala_mapear(l->hsv);
     l->valida = true;
     return true;
 }
@@ -95,9 +102,6 @@ det_resultado_t deteccion_apuntar(const lectura_t *l)
     if (!l->valida) {
         return DET_NO_VALIDA;
     }
-    if (!l->escala.tiene_posicion) {
-        return DET_ACROMATICO;
-    }
     if (!eje_calibrado()) {
         return DET_SIN_REFERENCIA;
     }
@@ -110,9 +114,8 @@ det_resultado_t deteccion_apuntar(const lectura_t *l)
 const char *deteccion_resultado_texto(det_resultado_t r)
 {
     switch (r) {
-    case DET_MOVIENDO:        return "moviendo el cursor";
-    case DET_YA_APUNTADO:     return "el cursor ya apunta a ese color";
-    case DET_ACROMATICO:      return "color sin tono (negro/gris/blanco): el cursor no se mueve";
+    case DET_MOVIENDO:        return "moviendo el carrito";
+    case DET_YA_APUNTADO:     return "el carrito ya esta en esa posicion";
     case DET_NO_VALIDA:       return "lectura no valida (desborde o sin calibrar)";
     case DET_SIN_REFERENCIA:  return "el eje no esta referenciado";
     case DET_NO_PUEDE:        return "el eje no acepta la orden (desarmado o en error)";

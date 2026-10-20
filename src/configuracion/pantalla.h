@@ -1,7 +1,7 @@
 /*
  * pantalla.h — Parámetros del módulo ST7789 de 2" (240×320, CS fijo a GND, BL a 3V3).
  *
- * Valores heredados de Lunar Lander (módulo sin CS, 240×240); con este módulo
+ * Valores heredados de Lunar Lander (módulo 240×240 sin CS); con este módulo
  * (CS a GND), sin verificar. Diagnóstico rápido:
  *   pantalla negra        → revisar SCK/SDA o probar TFT_SPI_MODO3 0
  *   colores invertidos    → TFT_INVERTIR 0

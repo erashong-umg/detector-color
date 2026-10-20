@@ -47,7 +47,6 @@ add_executable(detector_color
     src/drivers/botones.c
     src/drivers/joystick.c
     src/drivers/buzzer.c
-    src/drivers/led.c
     src/drivers/motor.c
     src/drivers/finales.c
     src/aplicacion/carro.c
@@ -55,6 +54,7 @@ add_executable(detector_color
     src/aplicacion/deteccion.c
     src/aplicacion/sistema.c
     src/aplicacion/app.c
+    src/aplicacion/protocolo.c
     src/drivers/proximidad.c
     src/dominio/color.c
     src/dominio/eje.c
@@ -62,6 +62,7 @@ add_executable(detector_color
     src/dominio/limites.c
     src/dominio/posicion.c
     src/dominio/escala.c
+    src/dominio/selector.c
     src/dominio/historial.c
     src/dominio/proximidad.c
     src/pruebas/prueba_pantalla.c

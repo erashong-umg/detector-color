@@ -29,7 +29,7 @@
      nivel > CERCA                  demasiado cerca                            */
 #define PROX_NIVEL_PRESENCIA         400
 #define PROX_NIVEL_OK                1500
-#define PROX_NIVEL_CERCA             3500
+#define PROX_NIVEL_CERCA             3990   /* OA se satura (~3830..4040) con cualquier objeto: "cerca" solo con ADC <= 5, es decir, nunca en la práctica */
 
 /* Histéresis alrededor de cada umbral, para que no oscile en el límite. */
 #define PROX_HISTERESIS              100

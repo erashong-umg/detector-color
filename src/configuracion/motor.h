@@ -15,8 +15,9 @@
 
 /* Un motor DC no arranca por debajo de cierto ciclo de trabajo: la
    velocidad 1..100 se reparte entre este mínimo y el 100 %.
-   HIPÓTESIS: ajustar al mínimo con el que el carrito se mueve de forma fiable. */
-#define MOTOR_DUTY_MIN_PCT      25u
+   Medido en el banco con VM = 5 V: a 60 % se mueve 2-4 mm, a 80 % va a trompicones, a 90 % mejor y a 100 % va con
+   fuerza. Si se sube VM o se cambia el motor, bajar este valor. */
+#define MOTOR_DUTY_MIN_PCT      90u
 
 /* Rampa: ms por cada punto de velocidad (100 puntos → 300 ms). */
 #define MOTOR_RAMPA_MS_PASO     3u
@@ -32,12 +33,12 @@
    El pull interno se elige hacia el estado ACTIVO: con un cable suelto el
    sensor se lee como "extremo alcanzado" y el carrito no se mueve (fallo seguro). */
 #define FINAL_ACTIVO_BAJO       1
-#define FINAL_ANTIREBOTE_MS     5u      /* nivel estable para aceptar el cambio */
+#define FINAL_ANTIREBOTE_MS     2u      /* nivel estable para aceptar el cambio (el carrito va rápido: 1 ms ≈ 0,4 mm) */
 
 /* ---- Límites de seguridad ---- */
 /* Tiempo máximo de movimiento continuo antes de parar con error.
    HIPÓTESIS: ajustar a ~1,5 × el tiempo real de recorrer los 350 mm. */
-#define CARRO_TIMEOUT_MS        6000u
+#define CARRO_TIMEOUT_MS        2500u
 
 /* Velocidad máxima permitida en la prueba manual (% de 1..100). */
 #define CARRO_VEL_MAX_PRUEBA    40

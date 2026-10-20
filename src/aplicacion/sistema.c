@@ -4,6 +4,8 @@
 #include "aplicacion/eje.h"
 #include "configuracion/proximidad.h"
 #include "configuracion/sistema.h"
+#include "dominio/limites.h"
+#include "drivers/finales.h"
 #include "drivers/proximidad.h"
 #include "hw/tiempo.h"
 
@@ -25,7 +27,16 @@ static historial_t historial;
 
 static uint32_t t_espera0;
 static uint32_t t_ok0;
+static uint32_t t_coherente0;       /* desde cuándo los finales vuelven a ser coherentes */
+static bool     coherente_visto;
 static bool     ok_activo;
+static bool     auto_referenciando;  /* hay una referencia automática en curso */
+static uint8_t  auto_intentos;       /* reintentos hechos */
+static uint32_t auto_espera_ms;      /* espera antes del próximo intento */
+static bool     auto_pendiente;  /* falta la referencia automática del arranque */
+static uint32_t t_auto;
+static bool     analisis_avisado;   /* ya se emitió ANALIZANDO: la próxima vuelta mide */
+static bool     forzar_objeto;   /* B1 largo: medir sin esperar al IR (muestras oscuras) */
 static int      manual_vel;
 
 static sistema_evento_t cola[COLA_EVENTOS];
@@ -71,12 +82,15 @@ static void volver_a_idle(void)
     accion = ACC_NINGUNA;
     guia = guia_emitida = SIS_GUIA_NINGUNA;
     ok_activo = false;
+    analisis_avisado = false;
     manual_vel = 0;
     estado = SIS_IDLE;
 }
 
 static void entrar_error(void)
 {
+    auto_referenciando = false;
+    auto_pendiente = false;
     accion = ACC_NINGUNA;
     guia = guia_emitida = SIS_GUIA_NINGUNA;
     ok_activo = false;
@@ -88,6 +102,8 @@ static void entrar_error(void)
 
 static void cancelar_operacion(bool avisar)
 {
+    auto_referenciando = false;     /* si el usuario cancela, no se reintenta sola */
+    auto_pendiente = false;
     switch (estado) {
     case SIS_HOMING:
     case SIS_MOVE_TO_TARGET:
@@ -127,7 +143,7 @@ static void ejecutar_accion(void)
             return;
         }
         hay_lectura = true;
-        objetivo_um = lectura.escala.tiene_posicion ? lectura.escala.x_um : -1;
+        objetivo_um = lectura.escala.x_um;
         apuntado = deteccion_apuntar(&lectura);
 
         if (apuntado == DET_MOVIENDO) {
@@ -135,7 +151,7 @@ static void ejecutar_accion(void)
             emitir(SIS_EVT_MEDIDA);
         } else {
             volver_a_idle();
-            emitir(apuntado == DET_ACROMATICO ? SIS_EVT_ACROMATICO : SIS_EVT_MEDIDA);
+            emitir(SIS_EVT_MEDIDA);
         }
         return;
     }
@@ -150,7 +166,7 @@ static void paso_espera_objeto(uint32_t ahora)
 {
     bool listo = true;
 
-    if (PROX_HABILITADO) {
+    if (PROX_HABILITADO && !forzar_objeto) {
         prox_estado_t p = proximidad_estado();
 
         switch (p) {
@@ -180,11 +196,20 @@ static void paso_espera_objeto(uint32_t ahora)
         listo = false;
     }
 
-    if (listo) {
+    if (listo && !analisis_avisado) {
+        /* Medir bloquea ≈ 270 ms: se avisa una vuelta antes para que el sonido ya esté
+           sonando mientras se analiza. */
+        analisis_avisado = true;
+        emitir(SIS_EVT_ANALIZANDO);
+    } else if (listo) {
+        analisis_avisado = false;
         ejecutar_accion();
-    } else if ((uint32_t)(ahora - t_espera0) >= SISTEMA_ESPERA_OBJETO_MS * 1000u) {
-        volver_a_idle();
-        emitir(SIS_EVT_TIEMPO_AGOTADO);
+    } else {
+        analisis_avisado = false;
+        if ((uint32_t)(ahora - t_espera0) >= SISTEMA_ESPERA_OBJETO_MS * 1000u) {
+            volver_a_idle();
+            emitir(SIS_EVT_TIEMPO_AGOTADO);
+        }
     }
 }
 
@@ -210,6 +235,10 @@ void sistema_iniciar(void)
     manual_vel = 0;
     ok_activo = false;
     cola_inicio = cola_cantidad = 0;
+    auto_pendiente = SISTEMA_AUTOREFERENCIAR != 0;
+    auto_referenciando = false;
+    auto_intentos = 0;
+    auto_espera_ms = SISTEMA_AUTOREF_RETARDO_MS;
 }
 
 void sistema_actualizar(void)
@@ -227,15 +256,54 @@ void sistema_actualizar(void)
             entrar_error();
         } else {
             estado = SIS_IDLE;
+            t_auto = ahora;
             emitir(SIS_EVT_LISTO);
         }
         return;
 
     case SIS_ERROR:
+        /* Recuperación automática: un final desconectado se lee como activo; al reconectarlo y
+           pasar SISTEMA_RECUPERAR_MS con los finales coherentes, se reinicia el error y se
+           vuelve a referenciar. Solo para este fallo: los demás necesitan a una persona. */
+        if (SISTEMA_AUTORECUPERAR && carro_error() == CARRO_ERROR_FINALES_INCOHERENTES) {
+            if (limites_incoherentes(final_inicio_activo(), final_fin_activo())) {
+                coherente_visto = false;
+            } else if (!coherente_visto) {
+                coherente_visto = true;
+                t_coherente0 = ahora;
+            } else if ((uint32_t)(ahora - t_coherente0) >= SISTEMA_RECUPERAR_MS * 1000u && eje_reiniciar()) {
+                coherente_visto = false;
+                volver_a_idle();
+                auto_pendiente = true;
+                auto_intentos = 0;
+                auto_espera_ms = SISTEMA_AUTOREF_REINTENTO_MS;
+                t_auto = ahora;
+                emitir(SIS_EVT_RECUPERADO);
+            }
+        } else {
+            coherente_visto = false;
+        }
         return;
 
     default:
         break;
+    }
+
+    /* Fallo recuperable durante la referencia automática (tiempo agotado o calibración
+       demasiado corta): se reinicia el error y se reintenta, sin molestar a nadie. */
+    if (hay_error && auto_referenciando && estado == SIS_HOMING &&
+        auto_intentos < SISTEMA_AUTOREF_INTENTOS &&
+        (carro_error() == CARRO_ERROR_TIMEOUT || eje_error() == EJE_ERROR_RECORRIDO_CORTO)) {
+        auto_intentos++;
+        if (eje_reiniciar()) {
+            volver_a_idle();
+            auto_referenciando = false;
+            auto_pendiente = true;
+            auto_espera_ms = SISTEMA_AUTOREF_REINTENTO_MS;
+            t_auto = ahora;
+            emitir(SIS_EVT_AUTOREF_REINTENTO);
+            return;
+        }
     }
 
     if (hay_error) {
@@ -247,6 +315,7 @@ void sistema_actualizar(void)
     case SIS_HOMING:
         if (eje_estado() == EJE_LISTO && eje_calibrado()) {
             volver_a_idle();
+            auto_referenciando = false;
             emitir(SIS_EVT_REFERENCIADO);
         }
         break;
@@ -268,6 +337,20 @@ void sistema_actualizar(void)
         break;
 
     case SIS_IDLE:
+        /* Referencia automática del arranque: se intenta una sola vez. */
+        if (auto_pendiente && (uint32_t)(ahora - t_auto) >= auto_espera_ms * 1000u) {
+            auto_pendiente = false;
+            if (sistema_armar(true)) {
+                if (sistema_referenciar()) {
+                    auto_referenciando = true;
+                    emitir(SIS_EVT_AUTOREFERENCIANDO);
+                } else {
+                    sistema_armar(false);
+                }
+            }
+        }
+        break;
+
     default:
         break;
     }
@@ -323,8 +406,18 @@ static bool empezar_espera(accion_t a)
     estado = (a == ACC_MEDIR) ? SIS_MEASURE : SIS_CALIBRATE;
     t_espera0 = tiempo_us();
     ok_activo = false;
+    analisis_avisado = false;
+    forzar_objeto = false;
     guia = guia_emitida = SIS_GUIA_NINGUNA;
     return true;
+}
+
+void sistema_forzar_objeto(void)
+{
+    if (estado == SIS_MEASURE || estado == SIS_CALIBRATE) {
+        forzar_objeto = true;
+        guia = SIS_GUIA_NINGUNA;
+    }
 }
 
 bool sistema_medir(void)
@@ -388,6 +481,20 @@ bool sistema_manual(bool activar)
     return true;
 }
 
+bool sistema_manual_ir_a(int32_t x_um)
+{
+    if (estado != SIS_MANUAL) {
+        return rechazar(SIS_RECHAZO_OCUPADO);
+    }
+    if (!eje_calibrado()) {
+        return rechazar(SIS_RECHAZO_SIN_REFERENCIA);
+    }
+    if (!eje_ir_a(x_um)) {
+        return rechazar(SIS_RECHAZO_ERROR_ACTIVO);
+    }
+    return true;
+}
+
 void sistema_manual_velocidad(int velocidad)
 {
     if (estado != SIS_MANUAL) {
@@ -406,7 +513,7 @@ bool sistema_guardar(void)
     entrada_hist_t e = {
         .rgb  = lectura.rgb,
         .h    = lectura.hsv.h,
-        .x_um = lectura.escala.tiene_posicion ? lectura.escala.x_um : -1,
+        .x_um = lectura.escala.x_um,
     };
     historial_agregar(&historial, &e);
     return true;
@@ -438,6 +545,7 @@ sistema_estado_t  sistema_estado(void)    { return estado; }
 sistema_guia_t    sistema_guia(void)      { return guia; }
 sistema_rechazo_t sistema_rechazo(void)   { return rechazo; }
 det_resultado_t   sistema_apuntado(void)  { return apuntado; }
+uint8_t           sistema_autoref_intentos(void) { return auto_intentos; }
 bool              sistema_hay_lectura(void) { return hay_lectura; }
 const lectura_t  *sistema_lectura(void)   { return &lectura; }
 int32_t           sistema_objetivo_um(void) { return objetivo_um; }
