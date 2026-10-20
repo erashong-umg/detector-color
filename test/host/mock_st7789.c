@@ -1,4 +1,4 @@
-/* st7789 simulado: escribe en un framebuffer RGB565 de 240x240 y lo vuelca a PPM. */
+/* st7789 simulado: escribe en un framebuffer RGB565 de 240x320 y lo vuelca a PPM. */
 #include "drivers/st7789.h"
 #include "configuracion/pantalla.h"
 #include <stdio.h>

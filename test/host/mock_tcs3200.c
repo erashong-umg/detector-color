@@ -8,6 +8,7 @@ int mock_tcs_desborde;
 int mock_tcs_llamadas;
 
 void tcs3200_iniciar(void) { }
+void tcs3200_poner_espera(void (*hook)(void)) { (void)hook; }
 
 uint32_t tcs3200_medir_canal(tcs_filtro_t filtro, bool *desborde)
 {

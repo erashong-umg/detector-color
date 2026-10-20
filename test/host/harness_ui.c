@@ -55,7 +55,7 @@ int main(int argc, char **argv)
     snprintf(m.eje, sizeof m.eje, "MOVIENDO");
     m.chip_cal = m.chip_ref = m.chip_arm = true;
     m.pos_um = 123400; m.objetivo_um = 261400;
-    m.clase = ESCALA_CROMATICO;
+    m.clase = ESCALA_CROMATICO; m.temperatura = TEMP_CALIDO;
     snprintf(m.mensaje, sizeof m.mensaje, "Moviendo el cursor");
     m.ir_inicio = false; m.ir_fin = false;
     snprintf(m.prox, sizeof m.prox, "ok");
@@ -67,9 +67,9 @@ int main(int argc, char **argv)
     pintar("03_principal_amarillo");
 
     /* 4. Blanco: acromático */
-    lectura(250, 248, 245, -1); m.clase = ESCALA_BLANCO; m.h = -1;
+    lectura(250, 248, 245, -1); m.clase = ESCALA_BLANCO; m.temperatura = TEMP_NEUTRO; m.h = -1;
     snprintf(m.estado, sizeof m.estado, "LISTO"); m.estado_color = ST7789_RGB565(70, 200, 120);
-    snprintf(m.mensaje, sizeof m.mensaje, "Sin tono: el cursor no se mueve");
+    snprintf(m.mensaje, sizeof m.mensaje, "Medido: neutro");
     m.pos_um = 350000; m.ir_fin = true;
     snprintf(m.prox, sizeof m.prox, "cerca");
     pintar("04_principal_blanco");
@@ -82,8 +82,9 @@ int main(int argc, char **argv)
     m.error[0] = 0; m.ir_inicio = m.ir_fin = false;
 
     /* 6. Menú */
-    { ui_entrada_t e = { 0 }; e.b4_largo = true; tecla(e); }
-    { ui_entrada_t e = { 0 }; e.dir = +1; tecla(e); tecla(e); tecla(e); }
+    { ui_entrada_t e = { 0 }; e.b4 = true; tecla(e); }
+    { ui_entrada_t e = { 0 }; e.b3 = true; tecla(e); tecla(e); tecla(e);      /* B3 = abajo, como el joystick */ }
+    { ui_entrada_t e = { 0 }; e.b2 = true; tecla(e); }                          /* B2 = arriba */
     pintar("06_menu");
 
     /* 7. Historial con entradas */
@@ -94,7 +95,7 @@ int main(int argc, char **argv)
         historial_agregar(&hist, &h);
     }
     { ui_entrada_t e = { 0 }; e.dir = +1; tecla(e); tecla(e); tecla(e); }   /* menú: 3 -> 6 = Historial */
-    { ui_entrada_t e = { 0 }; e.ok = true; tecla(e); }
+    { ui_entrada_t e = { 0 }; e.b1 = true; tecla(e); }              /* B1 = SW: menú -> historial */
     { ui_entrada_t e = { 0 }; e.dir = +1; tecla(e); tecla(e); tecla(e); }
     pintar("07_historial");
 
@@ -103,9 +104,9 @@ int main(int argc, char **argv)
         historial_t vacio; historial_iniciar(&vacio);
         const historial_t *guardado = m.historial; m.historial = &vacio;
         ui_iniciar();
-        { ui_entrada_t e = { 0 }; e.ok = true; tecla(e); }              /* principal -> menú */
+        { ui_entrada_t e = { 0 }; e.b4 = true; tecla(e); }               /* principal -> menú */
         { ui_entrada_t e = { 0 }; e.dir = +1; for (int i = 0; i < 6; i++) tecla(e); }
-        { ui_entrada_t e = { 0 }; e.ok = true; tecla(e); }              /* menú -> historial */
+        { ui_entrada_t e = { 0 }; e.b1 = true; tecla(e); }              /* menú -> historial */
         pintar("08_historial_vacio");
         m.historial = guardado;
     }
@@ -113,18 +114,42 @@ int main(int argc, char **argv)
     /* 9. Mover cursor */
     { ui_entrada_t e = { 0 }; e.b4 = true; tecla(e); }              /* vuelve a principal */
     m.pos_um = 123400;
-    { ui_entrada_t e = { 0 }; e.b3 = true; tecla(e); }              /* principal -> mover */
+    { ui_entrada_t e = { 0 }; e.b3 = true; tecla(e); }              /* B3 en la principal no hace nada */
+    if (ui_pantalla() != UI_PANTALLA_PRINCIPAL) {
+        printf("FALLO: B3 en la pantalla principal no debe cambiar de pantalla\n");
+        return 1;
+    }
+    { ui_entrada_t e = { 0 }; e.b4 = true; tecla(e); }               /* principal -> menú */
+    { ui_entrada_t e = { 0 }; e.dir = +1; for (int i = 0; i < 4; i++) tecla(e); }   /* 0 -> 4 = Mover cursor */
+    { ui_entrada_t e = { 0 }; e.b1 = true; tecla(e); }              /* menú -> mover */
     { ui_entrada_t e = { 0 }; e.joy_x = 60; for (int i = 0; i < 30; i++) tecla(e); }
     pintar("09_mover");
 
     /* 10. Información */
     { ui_entrada_t e = { 0 }; e.b4 = true; tecla(e); }
-    { ui_entrada_t e = { 0 }; e.ok = true; tecla(e); }              /* principal -> menú */
+    { ui_entrada_t e = { 0 }; e.b4 = true; tecla(e); }               /* principal -> menú */
     { ui_entrada_t e = { 0 }; e.dir = -1; tecla(e); }               /* 0 -> 7 = Información */
-    { ui_entrada_t e = { 0 }; e.ok = true; tecla(e); }
-    m.hay_negro = true; m.hay_blanco = false; m.recorrido_ms = 8025;
+    { ui_entrada_t e = { 0 }; e.b1 = true; tecla(e); }
+    m.hay_negro = true; m.hay_blanco = false; m.recorrido_ms = 782;
     snprintf(m.eje, sizeof m.eje, "LISTO");
     pintar("10_info");
+
+    /* 11-14. Asistente de inicio: eje, negro, blanco y listo */
+    ui_iniciar();
+    ui_abrir_asistente();
+    m.chip_ref = false; m.hay_negro = false; m.hay_blanco = false; m.midiendo = false;
+    snprintf(m.estado, sizeof m.estado, "HOMING"); snprintf(m.mensaje, sizeof m.mensaje, "%s", "");
+    pintar("11_asistente_eje");
+    m.chip_ref = true;
+    snprintf(m.estado, sizeof m.estado, "LISTO");
+    pintar("12_asistente_negro");
+    m.hay_negro = true; m.midiendo = true;
+    snprintf(m.estado, sizeof m.estado, "CAL. COLOR");
+    snprintf(m.mensaje, sizeof m.mensaje, "Acerca el objeto");
+    pintar("13_asistente_blanco");
+    m.hay_blanco = true; m.midiendo = false; m.mensaje[0] = 0;
+    snprintf(m.estado, sizeof m.estado, "LISTO");
+    pintar("14_asistente_listo");
 
     printf("Bloques descartados por salirse de la pantalla: %d\n", fuera_de_pantalla);
     return 0;

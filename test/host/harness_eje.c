@@ -9,6 +9,9 @@
 #include "drivers/finales.h"
 #include "hw/tiempo.h"
 
+/* Tiempo de viaje simulado: el mismo que espera el firmware (configuracion/eje.h). */
+#define T_VIAJE (EJE_RECORRIDO_ESPERADO_MS / 1000.0)
+
 uint32_t mock_us;
 #ifndef RUIDO
 #define RUIDO 0.03
@@ -80,18 +83,19 @@ int main(void)
 {
     srand(7);
     printf("=== Homing + calibración (código real en C) ===\n");
-    escenario("arranque en el medio",              175000, 8.0, 15, +1, 0.0, 0, 0);
-    escenario("arranque en el INICIO",             0,      8.0, 15, +1, 0.0, 0, 0);
-    escenario("arranque en el FINAL",              350000, 8.0, 15, +1, 0.0, 0, 0);
-    escenario("recorrido de 15 s (esperado 8 s)",  100000, 15.0, 15, +1, 0.0, 0, 0);
+    escenario("arranque en el medio",              175000, T_VIAJE, 15, +1, 0.0, 0, 0);
+    escenario("arranque en el INICIO",             0,      T_VIAJE, 15, +1, 0.0, 0, 0);
+    escenario("arranque en el FINAL",              350000, T_VIAJE, 15, +1, 0.0, 0, 0);
+    escenario("recorrido el doble del esperado",    100000, T_VIAJE * 2.0, 15, +1, 0.0, 0, 0);
     printf("=== Fallos ===\n");
-    escenario("sentido del motor INVERTIDO",       175000, 8.0, 15, -1, 0.0, 0, 0);
-    escenario("final FIN estropeado",              175000, 8.0, 15, +1, 0.0, 0, 1);
-    escenario("final INICIO estropeado",           175000, 8.0, 15, +1, 0.0, 1, 0);
+    escenario("sentido del motor INVERTIDO",       175000, T_VIAJE, 15, -1, 0.0, 0, 0);
+    escenario("INVERTIDO pegado al FINAL",         350000, T_VIAJE, 15, -1, 0.0, 0, 0);
+    escenario("final FIN estropeado",              175000, T_VIAJE, 15, +1, 0.0, 0, 1);
+    escenario("final INICIO estropeado",           175000, T_VIAJE, 15, +1, 0.0, 1, 0);
 
     printf("=== Destinos tras calibrar, con ruido de ±3 %% en la velocidad de cada viaje ===\n");
     for (int zm = 0; zm <= 25; zm += 12) {
-        escenario("calibrado", 175000, 8.0, zm, +1, RUIDO, 0, 0);
+        escenario("calibrado", 175000, T_VIAJE, zm, +1, RUIDO, 0, 0);
         double peor = 0, suma_t = 0; int errores = 0, n_mov = 0;
         static const double objetivos[] = { 50000, 300000, 175000, 87500, 262500, 10000, 340000, 0, 350000, 120000 };
         printf("  zona muerta %2d%%: ", zm);
@@ -109,7 +113,7 @@ int main(void)
     }
 
     printf("=== Paseo de repetibilidad: 8 viajes entre 60 y 290 mm (ruido ±3 %%) ===\n");
-    escenario("calibrado", 175000, 8.0, 15, +1, RUIDO, 0, 0);
+    escenario("calibrado", 175000, T_VIAJE, 15, +1, RUIDO, 0, 0);
     double amin = 1e9, amax = -1e9, bmin = 1e9, bmax = -1e9;
     for (int i = 0; i < 8; i++) {
         eje_ir_a(60000);  hasta(listo_o_error, 60000); for (int k = 0; k < 400; k++) paso_ms();
@@ -123,7 +127,7 @@ int main(void)
            amin / 1000, amax / 1000, (amax - amin) / 1000, bmin / 1000, bmax / 1000, (bmax - bmin) / 1000);
 
     printf("=== Seguridad: eje_quieto() y movimiento manual ===\n");
-    planta_inicio(175000, 8.0, 15, +1, 0.0, 0, 0); carro_iniciar(); eje_iniciar(); carro_armar(true);
+    planta_inicio(175000, T_VIAJE, 15, +1, 0.0, 0, 0); carro_iniciar(); eje_iniciar(); carro_armar(true);
     printf("  parado sin orden: quieto=%d\n", eje_quieto());
     eje_manual(30); for (int k = 0; k < 300; k++) paso_ms();
     printf("  con jog manual:   quieto=%d (debe ser 0), x=%.1f mm\n", eje_quieto(), planta_x_um / 1000);

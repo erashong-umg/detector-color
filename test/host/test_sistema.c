@@ -8,9 +8,11 @@
 #include "aplicacion/carro.h"
 #include "aplicacion/eje.h"
 #include "configuracion/eje.h"
+#include "configuracion/escala.h"
 #include "configuracion/proximidad.h"
 #include "configuracion/sistema.h"
 #include "dominio/proximidad.h"
+#include "dominio/selector.h"
 #include "drivers/finales.h"
 #include "drivers/tcs3200.h"
 #include "hw/tiempo.h"
@@ -34,7 +36,7 @@ static int choque;
 static void planta_inicio(double x0)
 {
     unsigned duty40 = 25u + 75u * (EJE_VEL_VIAJE - 1) / 99u;
-    K = LARGO / (8.0 * 1000.0) / ((double)duty40 - ZONA_MUERTA);
+    K = LARGO / ((double)EJE_RECORRIDO_ESPERADO_MS) / ((double)duty40 - ZONA_MUERTA);
     planta_x_um = x0;
     ini_roto = fin_roto = 0;
     choque = 0;
@@ -57,6 +59,33 @@ static int visto[32];               /* eventos vistos, por tipo */
 #define COMPROBAR(cond, ...) do { \
     if (cond) { pasa++; } else { falla++; printf("   FALLO: "); printf(__VA_ARGS__); printf("  (línea %d)\n", __LINE__); } } while (0)
 
+#ifdef SOLO_PROTOCOLO
+#include "aplicacion/protocolo.h"
+
+/* Las líneas que el protocolo envía, para comprobarlas. */
+static char salida_buf[64][240];
+static int  salida_n;
+
+static void capturar(const char *linea)
+{
+    if (salida_n < 64) {
+        snprintf(salida_buf[salida_n++], sizeof salida_buf[0], "%s", linea);
+    }
+}
+
+static void limpiar_salida(void) { salida_n = 0; }
+
+static int hubo(const char *trozo)
+{
+    for (int i = 0; i < salida_n; i++) {
+        if (strstr(salida_buf[i], trozo)) {
+            return 1;
+        }
+    }
+    return 0;
+}
+#endif
+
 static void avanzar(int ms)
 {
     for (int i = 0; i < ms; i++) {
@@ -65,6 +94,9 @@ static void avanzar(int ms)
         mock_us += 1000;
         for (sistema_evento_t e; (e = sistema_tomar_evento()) != SIS_EVT_NINGUNO; ) {
             visto[e]++;
+#ifdef SOLO_PROTOCOLO
+            protocolo_evento(e);
+#endif
         }
     }
 }
@@ -84,7 +116,7 @@ static void prox(prox_estado_t que)
     case PROX_SIN_OBJETO: nivel = 100;  od_activo = 0; break;
     case PROX_LEJOS:      nivel = 900;  od_activo = 0; break;
     case PROX_OK:         nivel = 2500; od_activo = 1; break;
-    case PROX_CERCA:      nivel = 3900; od_activo = 1; break;
+    case PROX_CERCA:      nivel = 4095; od_activo = 1; break;
     }
     mock_adc_prox = PROX_ANALOGICO_INVERTIDO ? 4095 - nivel : nivel;
     mock_od_nivel = (PROX_DIGITAL_ACTIVO_BAJO ? !od_activo : od_activo) ? 1 : 0;
@@ -123,6 +155,176 @@ static void armar_y_referenciar(void)
 
 int main(void)
 {
+#ifdef SOLO_PROTOCOLO
+    TITULO("Protocolo serie: comandos, respuestas y eventos");
+    reiniciar_todo(175000);
+    protocolo_iniciar(capturar);
+    COMPROBAR(hubo("HOLA,detector-color,protocolo=1"), "debe saludar al iniciar");
+
+    limpiar_salida(); protocolo_procesar_linea("AYUDA");
+    COMPROBAR(hubo("AYUDA,"), "AYUDA debe listar los comandos");
+    limpiar_salida(); protocolo_procesar_linea("estado");
+    COMPROBAR(hubo("ESTADO,estado=IDLE,armado=0,referenciado=0,calibrado=0"), "ESTADO inicial (sin distinguir mayúsculas)");
+    limpiar_salida(); protocolo_procesar_linea("LECTURA");
+    COMPROBAR(hubo("ERR,SIN_LECTURA"), "LECTURA sin medir debe dar error");
+    limpiar_salida(); protocolo_procesar_linea("MEDIR");
+    COMPROBAR(hubo("ERR,NO_CALIBRADO"), "MEDIR sin calibrar el color");
+    limpiar_salida(); protocolo_procesar_linea("IR 160");
+    COMPROBAR(hubo("ERR,NO_ARMADO"), "IR sin armar");
+    limpiar_salida(); protocolo_procesar_linea("COSA");
+    COMPROBAR(hubo("ERR,COMANDO"), "comando desconocido");
+    limpiar_salida(); protocolo_procesar_linea("CAL");
+    COMPROBAR(hubo("ERR,ARGUMENTO"), "CAL sin argumento");
+    limpiar_salida(); protocolo_procesar_linea("IR abc");
+    COMPROBAR(hubo("ERR,ARGUMENTO"), "IR con un argumento no numérico");
+    limpiar_salida(); protocolo_procesar_linea("IR 9999");
+    COMPROBAR(hubo("ERR,FUERA_DE_RANGO"), "IR fuera del recorrido");
+    limpiar_salida(); protocolo_procesar_linea("   ");
+    COMPROBAR(salida_n == 0, "una línea vacía no responde nada");
+
+    /* Entrada byte a byte, con CRLF. */
+    limpiar_salida();
+    { const char *s = "estado\r\n"; for (; *s; s++) protocolo_byte(*s); }
+    COMPROBAR(salida_n == 1 && hubo("ESTADO,"), "byte a byte con CRLF: una sola respuesta (%d)", salida_n);
+    limpiar_salida();
+    for (int i = 0; i < 100; i++) protocolo_byte('A');
+    protocolo_byte('\n');
+    COMPROBAR(hubo("ERR,LINEA_LARGA"), "una línea demasiado larga debe rechazarse");
+
+    /* Armar, referenciar y ver los eventos. */
+    limpiar_salida(); protocolo_procesar_linea("ARMAR");
+    COMPROBAR(hubo("OK"), "ARMAR");
+    limpiar_salida(); protocolo_procesar_linea("REF");
+    COMPROBAR(hubo("OK"), "REF");
+    hasta_estado(SIS_IDLE, 80000);
+    COMPROBAR(hubo("EVT,REFERENCIADO"), "debe enviar EVT,REFERENCIADO");
+    limpiar_salida(); protocolo_procesar_linea("ESTADO");
+    COMPROBAR(hubo("armado=1,referenciado=1"), "ESTADO tras referenciar");
+
+    /* Calibrar. */
+    prox(PROX_OK);
+    color(0, 0, 0);
+    limpiar_salida(); protocolo_procesar_linea("CAL NEGRO");
+    COMPROBAR(hubo("OK"), "CAL NEGRO");
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    COMPROBAR(hubo("EVT,ANALIZANDO") && hubo("EVT,CAL_NEGRO"), "eventos de calibrar el negro");
+    color(255, 255, 255);
+    limpiar_salida(); protocolo_procesar_linea("CAL BLANCO");
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    COMPROBAR(hubo("EVT,CAL_BLANCO"), "evento de calibrar el blanco");
+
+    /* Medir un verde (frío) y ver la lectura. */
+    color(40, 200, 60);
+    limpiar_salida(); protocolo_procesar_linea("MEDIR");
+    COMPROBAR(hubo("OK"), "MEDIR");
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    COMPROBAR(hubo("EVT,MEDIDA,") && hubo("temp=FRIO") && hubo("clase=CROMATICO"), "EVT,MEDIDA con temperatura FRIO");
+    COMPROBAR(hubo("obj_mm=266.7"), "el objetivo del frío debe ser 266.7 mm");
+    limpiar_salida(); protocolo_procesar_linea("LECTURA");
+    COMPROBAR(hubo("LECTURA,hex=#") && hubo("hz="), "LECTURA con el color y las frecuencias");
+    hasta_estado(SIS_IDLE, 60000);
+    COMPROBAR(hubo("EVT,LLEGADA"), "debe enviar EVT,LLEGADA");
+
+    /* Historial. */
+    limpiar_salida(); protocolo_procesar_linea("GUARDAR");
+    COMPROBAR(hubo("OK"), "GUARDAR");
+    limpiar_salida(); protocolo_procesar_linea("HIST");
+    COMPROBAR(hubo("HIST,0,hex=#") && hubo("HIST,FIN,1"), "HIST con una entrada");
+
+    /* Mover y parar. */
+    limpiar_salida(); protocolo_procesar_linea("IR 100.5");
+    COMPROBAR(hubo("OK"), "IR con decimales");
+    avanzar(300);
+    limpiar_salida(); protocolo_procesar_linea("PARAR");
+    COMPROBAR(hubo("OK"), "PARAR");
+    avanzar(800);
+    limpiar_salida(); protocolo_procesar_linea("DESARMAR");
+    COMPROBAR(hubo("OK"), "DESARMAR");
+
+    printf("\n==========  %d comprobaciones correctas, %d fallos  ==========\n", pasa, falla);
+    return falla ? 1 : 0;
+#endif
+#ifdef SOLO_AUTOREF
+    TITULO("Autoreferenciar al iniciar");
+    reiniciar_todo(175000);
+    COMPROBAR(sistema_estado() == SIS_IDLE && visto[SIS_EVT_LISTO] == 1, "tras INIT debe estar en IDLE y haber emitido LISTO");
+    COMPROBAR(!sistema_armado(), "antes del retardo no debe haberse armado");
+    avanzar(SISTEMA_AUTOREF_RETARDO_MS + 50);
+    COMPROBAR(sistema_armado() && sistema_estado() == SIS_HOMING, "pasado el retardo debe armar y empezar el homing (%s)", sistema_estado_texto(sistema_estado()));
+    COMPROBAR(visto[SIS_EVT_AUTOREFERENCIANDO] == 1, "falta el evento AUTOREFERENCIANDO");
+    int ta = hasta_estado(SIS_IDLE, 80000);
+    COMPROBAR(sistema_estado() == SIS_IDLE && sistema_referenciado(), "debe terminar referenciado y en IDLE (%s tras %d ms)", sistema_estado_texto(sistema_estado()), ta);
+    COMPROBAR(visto[SIS_EVT_REFERENCIADO] == 1, "falta el evento REFERENCIADO");
+    COMPROBAR(planta_x_um < 3000.0 && !choque, "el carrito debe quedar junto al inicio sin choque (%.1f mm)", planta_x_um / 1000);
+    avanzar(SISTEMA_AUTOREF_RETARDO_MS + 50);
+    COMPROBAR(visto[SIS_EVT_AUTOREFERENCIANDO] == 1, "la referencia automática solo debe ocurrir una vez");
+
+    TITULO("Autoreferenciar: reintentos si falla (final de INICIO roto)");
+    reiniciar_todo(175000);
+    ini_roto = 1;                       /* el final INICIO no se activa nunca: el homing agota el tiempo */
+    memset(visto, 0, sizeof visto);
+    avanzar(SISTEMA_AUTOREF_RETARDO_MS + 20000);
+    COMPROBAR(visto[SIS_EVT_AUTOREF_REINTENTO] == SISTEMA_AUTOREF_INTENTOS,
+              "debe reintentar %d veces (%d)", SISTEMA_AUTOREF_INTENTOS, visto[SIS_EVT_AUTOREF_REINTENTO]);
+    COMPROBAR(sistema_estado() == SIS_ERROR, "agotados los reintentos debe quedar en ERROR (%s)", sistema_estado_texto(sistema_estado()));
+    COMPROBAR(visto[SIS_EVT_ERROR] == 1, "y avisar del error una sola vez (%d)", visto[SIS_EVT_ERROR]);
+    COMPROBAR(sistema_autoref_intentos() == SISTEMA_AUTOREF_INTENTOS, "el contador de intentos debe llegar a %d", SISTEMA_AUTOREF_INTENTOS);
+    ini_roto = 0;
+
+    TITULO("Autoreferenciar: no con un error al arrancar");
+    memset(visto, 0, sizeof visto);
+    planta_inicio(175000);
+    forzar_ini = forzar_fin = 1;
+    prox(PROX_SIN_OBJETO);
+    sistema_iniciar();
+    avanzar(SISTEMA_AUTOREF_RETARDO_MS + 50);
+    COMPROBAR(sistema_estado() == SIS_ERROR && !sistema_armado(), "con los dos finales activos no debe armar ni moverse (%s)", sistema_estado_texto(sistema_estado()));
+    COMPROBAR(visto[SIS_EVT_AUTOREFERENCIANDO] == 0, "no debe emitir AUTOREFERENCIANDO");
+
+    /* Al reconectar los finales el sistema se recupera solo y vuelve a referenciar. */
+    forzar_ini = forzar_fin = 0;
+    avanzar(SISTEMA_RECUPERAR_MS - 100);
+    COMPROBAR(sistema_estado() == SIS_ERROR && visto[SIS_EVT_RECUPERADO] == 0,
+              "antes de SISTEMA_RECUPERAR_MS debe seguir en ERROR (%s)", sistema_estado_texto(sistema_estado()));
+    avanzar(300);
+    COMPROBAR(visto[SIS_EVT_RECUPERADO] == 1, "debe emitir RECUPERADO al volver los finales coherentes");
+    avanzar(SISTEMA_AUTOREF_REINTENTO_MS + 100);
+    COMPROBAR(visto[SIS_EVT_AUTOREFERENCIANDO] == 1 && sistema_armado(), "y volver a referenciar solo");
+    hasta_estado(SIS_IDLE, 80000);
+    COMPROBAR(sistema_referenciado(), "debe terminar referenciado (%s)", sistema_estado_texto(sistema_estado()));
+
+    /* Un cable intermitente no debe recuperar el sistema: cada corte reinicia la cuenta. */
+    TITULO("Autoreferenciar: finales intermitentes no recuperan");
+    memset(visto, 0, sizeof visto);
+    planta_inicio(175000);
+    forzar_ini = forzar_fin = 1;
+    prox(PROX_SIN_OBJETO);
+    sistema_iniciar();
+    avanzar(50);
+    COMPROBAR(sistema_estado() == SIS_ERROR, "con los dos finales activos arranca en ERROR");
+    for (int i = 0; i < 6; i++) {
+        forzar_ini = forzar_fin = 0; avanzar(SISTEMA_RECUPERAR_MS / 2);
+        forzar_ini = forzar_fin = 1; avanzar(50);
+    }
+    COMPROBAR(sistema_estado() == SIS_ERROR && visto[SIS_EVT_RECUPERADO] == 0, "intermitente: debe seguir en ERROR sin recuperarse");
+    forzar_ini = forzar_fin = 0;
+
+    /* Sensor de color desconectado: sin señal no se calibra ni se mide. */
+    TITULO("Sensor de color sin señal");
+    reiniciar_todo(175000);
+    avanzar(SISTEMA_AUTOREF_RETARDO_MS + 20);
+    hasta_estado(SIS_IDLE, 80000);
+    memset(visto, 0, sizeof visto);
+    mock_frecuencias.r = mock_frecuencias.g = mock_frecuencias.b = mock_frecuencias.c = 0;
+    prox(PROX_OK);
+    COMPROBAR(sistema_calibrar(true), "calibrar negro se acepta");
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    COMPROBAR(visto[SIS_EVT_LECTURA_INVALIDA] == 1 && !deteccion_hay_negro(), "sin señal: lectura inválida y sin guardar la calibración");
+
+    printf("\n==========  %d comprobaciones correctas, %d fallos  ==========\n", pasa, falla);
+    return falla ? 1 : 0;
+#endif
+
     TITULO("1. Clasificación del IR con histéresis (dominio)");
     {
         prox_estado_t e = PROX_SIN_OBJETO;
@@ -216,39 +418,58 @@ int main(void)
     COMPROBAR(mock_tcs_llamadas == llamadas, "entrar y salir de la distancia correcta no debe medir");
     prox(PROX_OK); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
     COMPROBAR(visto[SIS_EVT_CAL_BLANCO] == 1, "debe calibrar el blanco");
+    /* B1 largo: con una muestra oscura el IR no la ve; forzar ejecuta sin esperar a PROX_OK */
+    sistema_calibrar(false);
+    prox(PROX_SIN_OBJETO); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    COMPROBAR(sistema_estado() == SIS_CALIBRATE, "sin objeto y sin forzar debe seguir esperando");
+    sistema_forzar_objeto(); avanzar(100);
+    COMPROBAR(sistema_estado() == SIS_IDLE && visto[SIS_EVT_CAL_BLANCO] == 2, "forzado debe calibrar sin esperar al IR (estado %s)", sistema_estado_texto(sistema_estado()));
+    sistema_forzar_objeto();
+    COMPROBAR(sistema_estado() == SIS_IDLE, "forzar fuera de MEASURE/CALIBRATE no debe hacer nada");
+    prox(PROX_OK); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);           /* el resto de pruebas parte con la muestra en su sitio */
 
-    TITULO("5. Medir un color y llevar el cursor");
+    TITULO("5. Medir un color frío y llevar el carrito");
     COMPROBAR(sistema_medir(), "medir con el color calibrado debe aceptarse (rechazo %d)", sistema_rechazo());
-    color(40, 200, 60);                                /* verde: H ≈ 127° → ≈ 123 mm */
+    color(40, 200, 60);                                /* verde: H ≈ 127° → frío */
     avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
     COMPROBAR(visto[SIS_EVT_MEDIDA] == 1, "falta el evento MEDIDA");
     COMPROBAR(sistema_hay_lectura(), "debe haber lectura");
+    COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_FRIO, "el verde debe ser frío");
     COMPROBAR(sistema_estado() == SIS_MOVE_TO_TARGET, "debe pasar a MOVE_TO_TARGET (%s)", sistema_estado_texto(sistema_estado()));
-    COMPROBAR(sistema_apuntado() == DET_MOVIENDO, "el cursor debe ir hacia el color");
+    COMPROBAR(sistema_apuntado() == DET_MOVIENDO, "el carrito debe ir hacia la posición fría");
     int32_t objetivo = sistema_objetivo_um();
-    COMPROBAR(objetivo > 110000 && objetivo < 135000, "objetivo del verde fuera de rango (%.1f mm)", objetivo / 1000.0);
+    COMPROBAR(objetivo == ESCALA_POS_FRIO_UM, "objetivo del verde: %.1f mm, esperado %.1f mm", objetivo / 1000.0, ESCALA_POS_FRIO_UM / 1000.0);
     COMPROBAR(!sistema_medir() && sistema_rechazo() == SIS_RECHAZO_OCUPADO, "medir mientras se mueve debe rechazarse");
     hasta_estado(SIS_IDLE, 60000);
     avanzar(500);
     COMPROBAR(visto[SIS_EVT_LLEGADA] == 1, "falta LLEGADA");
-    COMPROBAR(fabs(planta_x_um - objetivo) < 6000.0, "el cursor quedó a %.1f mm del objetivo %.1f mm",
+    COMPROBAR(fabs(planta_x_um - objetivo) < 6000.0, "el carrito quedó a %.1f mm del objetivo %.1f mm",
               fabs(planta_x_um - objetivo) / 1000, objetivo / 1000.0);
     COMPROBAR(!choque, "sin choque");
-    printf("   objetivo %.1f mm, cursor real %.1f mm\n", objetivo / 1000.0, planta_x_um / 1000);
+    printf("   objetivo %.1f mm, carrito real %.1f mm\n", objetivo / 1000.0, planta_x_um / 1000);
 
-    TITULO("6. Colores sin tono: el cursor no se mueve");
-    double antes = planta_x_um;
+    TITULO("6. Cálido y neutro (colores sin tono)");
+    memset(visto, 0, sizeof visto);
+    sistema_medir(); color(230, 40, 40); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_CALIDO, "el rojo debe ser cálido");
+    COMPROBAR(sistema_objetivo_um() == ESCALA_POS_CALIDO_UM, "rojo: objetivo %.1f mm", sistema_objetivo_um() / 1000.0);
+    COMPROBAR(sistema_estado() == SIS_MOVE_TO_TARGET, "rojo: debe moverse a la posición cálida");
+    hasta_estado(SIS_IDLE, 60000); avanzar(500);
+    COMPROBAR(fabs(planta_x_um - ESCALA_POS_CALIDO_UM) < 15000.0, "rojo: carrito en %.1f mm", planta_x_um / 1000);
     memset(visto, 0, sizeof visto);
     sistema_medir(); color(250, 250, 250); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
-    COMPROBAR(visto[SIS_EVT_ACROMATICO] == 1, "blanco: falta el evento ACROMATICO");
-    COMPROBAR(sistema_estado() == SIS_IDLE, "blanco: debe volver a IDLE");
-    COMPROBAR(fabs(planta_x_um - antes) < 100.0, "blanco: el cursor no debe moverse");
+    COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_NEUTRO, "blanco: debe ser neutro");
+    COMPROBAR(sistema_objetivo_um() == ESCALA_POS_NEUTRO_UM, "blanco: objetivo %.1f mm", sistema_objetivo_um() / 1000.0);
+    COMPROBAR(sistema_estado() == SIS_MOVE_TO_TARGET, "blanco: debe moverse a la posición neutra");
+    hasta_estado(SIS_IDLE, 60000); avanzar(500);
+    COMPROBAR(fabs(planta_x_um - ESCALA_POS_NEUTRO_UM) < 15000.0, "blanco: carrito en %.1f mm", planta_x_um / 1000);
     memset(visto, 0, sizeof visto);
     sistema_medir(); color(10, 10, 10); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
-    COMPROBAR(visto[SIS_EVT_ACROMATICO] == 1, "negro: falta el evento ACROMATICO");
+    COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_NEUTRO && visto[SIS_EVT_MEDIDA] == 1, "negro: neutro y evento MEDIDA");
+    COMPROBAR(sistema_estado() == SIS_IDLE, "negro: ya está en la posición neutra, no se mueve");
     memset(visto, 0, sizeof visto);
     sistema_medir(); color(120, 120, 120); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
-    COMPROBAR(visto[SIS_EVT_ACROMATICO] == 1, "gris: falta el evento ACROMATICO");
+    COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_NEUTRO && visto[SIS_EVT_MEDIDA] == 1, "gris: neutro y evento MEDIDA");
 
     TITULO("7. Lectura inválida (desborde del sensor)");
     memset(visto, 0, sizeof visto);
@@ -265,7 +486,7 @@ int main(void)
     sistema_cancelar();
     avanzar(1);                                       /* el arnés recoge los eventos al avanzar */
     COMPROBAR(sistema_estado() == SIS_IDLE && visto[SIS_EVT_CANCELADO] == 1, "cancelar la espera debe volver a IDLE con evento");
-    /* azul (H ≈ 231°, ≈ 224 mm): lejos de donde quedó el cursor, así que sí debe moverse */
+    /* azul (frío): lejos de la posición neutra donde quedó el carrito, así que sí debe moverse */
     prox(PROX_OK); color(30, 60, 220);
     sistema_medir(); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
     COMPROBAR(sistema_estado() == SIS_MOVE_TO_TARGET, "debe estar moviéndose (%s)", sistema_estado_texto(sistema_estado()));
@@ -279,9 +500,36 @@ int main(void)
     COMPROBAR(sistema_guardar(), "guardar con lectura debe funcionar");
     COMPROBAR(historial_cantidad(sistema_historial()) == 1, "el historial debe tener 1 entrada (%d)", historial_cantidad(sistema_historial()));
 
+    TITULO("9b. Selector de color del modo manual (marca en la barra cromática)");
+    {
+        selector_t sel;
+        selector_iniciar(&sel);
+        COMPROBAR(escala_mapear(selector_hsv(&sel)).temperatura == TEMP_CALIDO, "arranca en rojo: cálido");
+        for (int i = 0; i < 100; i++) selector_mover(&sel, 100, 0);      /* a tope: 1,2° por llamada → 120° */
+        COMPROBAR(selector_hsv(&sel).h == 120 && escala_mapear(selector_hsv(&sel)).temperatura == TEMP_FRIO,
+                  "a 120° (verde) debe ser frío (h=%d)", selector_hsv(&sel).h);
+        for (int i = 0; i < 100; i++) selector_mover(&sel, 100, 0);
+        COMPROBAR(selector_hsv(&sel).h == 240 && escala_mapear(selector_hsv(&sel)).temperatura == TEMP_FRIO, "a 240° (azul) debe ser frío");
+        for (int i = 0; i < 100; i++) selector_mover(&sel, 100, 0);
+        COMPROBAR(selector_hsv(&sel).h == 0 && escala_mapear(selector_hsv(&sel)).temperatura == TEMP_CALIDO,
+                  "da la vuelta a 360° y vuelve al rojo, cálido (h=%d)", selector_hsv(&sel).h);
+        selector_mover(&sel, -100, 0);
+        COMPROBAR(selector_hsv(&sel).h == 358, "hacia la izquierda desde 0° da la vuelta (h=%d)", selector_hsv(&sel).h);
+        selector_mover(&sel, 0, +1);                                    /* abajo: menos saturación */
+        COMPROBAR(sel.s == 255 - SELECTOR_PASO_SATURACION, "abajo baja la saturación (%d)", sel.s);
+        for (int i = 0; i < 10; i++) selector_mover(&sel, 0, +1);
+        COMPROBAR(sel.s == 0 && escala_mapear(selector_hsv(&sel)).temperatura == TEMP_NEUTRO, "sin saturación es un gris: neutro");
+        for (int i = 0; i < 20; i++) selector_mover(&sel, 0, -1);
+        COMPROBAR(sel.s == 255, "arriba sube la saturación hasta 255 sin pasarse (%d)", sel.s);
+    }
+
     TITULO("10. Modo manual");
     sistema_armar(true);
     COMPROBAR(sistema_manual(true) && sistema_estado() == SIS_MANUAL, "debe entrar en MANUAL");
+    COMPROBAR(sistema_manual_ir_a(ESCALA_POS_FRIO_UM), "dentro de MANUAL se puede ir a una posición");
+    avanzar(2500);
+    COMPROBAR(sistema_estado() == SIS_MANUAL && fabs(planta_x_um - ESCALA_POS_FRIO_UM) < 40000.0,
+              "el carrito debe ir a la posición fría sin salir de MANUAL (%.1f mm, %s)", planta_x_um / 1000, sistema_estado_texto(sistema_estado()));
     COMPROBAR(!sistema_medir() && sistema_rechazo() == SIS_RECHAZO_OCUPADO, "medir en MANUAL debe rechazarse");
     sistema_manual_velocidad(40);
     avanzar(1500);
@@ -294,10 +542,11 @@ int main(void)
     COMPROBAR(planta_x_um > 345000.0, "debe llegar al final (%.1f mm)", planta_x_um / 1000);
     sistema_manual(false);
     COMPROBAR(sistema_estado() == SIS_IDLE, "salir de MANUAL debe volver a IDLE");
+    COMPROBAR(!sistema_manual_ir_a(100000), "fuera de MANUAL sistema_manual_ir_a debe rechazarse");
 
     TITULO("11. Desarmar durante una operación");
     reiniciar_todo(175000);
-    sistema_armar(true); sistema_referenciar(); avanzar(2000);
+    sistema_armar(true); sistema_referenciar(); avanzar(300);
     COMPROBAR(sistema_estado() == SIS_HOMING, "debe estar en HOMING");
     sistema_armar(false);
     avanzar(500);

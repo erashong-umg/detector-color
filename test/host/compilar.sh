@@ -18,7 +18,7 @@ CFLAGS="-std=c11 -Wall -Wextra -g -O1 -I$H/mock -Isrc"
 echo "== Interfaz (pantalla simulada) =="
 gcc $CFLAGS -o "$OUT/harness_ui.exe" "$H/harness_ui.c" "$H/mock_st7789.c" \
     src/ui/interfaz.c src/graficos/texto.c src/graficos/fuente5x7.c \
-    src/dominio/color.c src/dominio/escala.c src/dominio/historial.c
+    src/dominio/color.c src/dominio/escala.c src/dominio/historial.c src/dominio/selector.c
 "$OUT/harness_ui.exe" "$OUT/ui"
 python "$H/montaje.py" "$OUT/ui" || echo "(sin Python/Pillow: quedan los .ppm sin montar)"
 
@@ -31,6 +31,17 @@ gcc $CFLAGS -DRUIDO="${RUIDO:-0.03}" -o "$OUT/harness_eje.exe" "$H/harness_eje.c
 "$OUT/harness_eje.exe"
 
 echo
+echo "== Autoreferenciar al iniciar =="
+gcc $CFLAGS -Wno-unused-function -DSOLO_AUTOREF -o "$OUT/test_autoref.exe" "$H/test_sistema.c" "$H/mock_motor.c" "$H/mock_finales.c"     "$H/mock_adc.c" "$H/mock_tcs3200.c"     src/aplicacion/sistema.c src/aplicacion/carro.c src/aplicacion/eje.c src/aplicacion/deteccion.c     src/dominio/posicion.c src/dominio/limites.c src/dominio/escala.c src/dominio/selector.c src/dominio/color.c     src/dominio/historial.c src/dominio/proximidad.c src/drivers/proximidad.c -lm
+"$OUT/test_autoref.exe"
+
+echo
+echo "== Protocolo serie =="
+gcc $CFLAGS -Wno-unused-function -DSOLO_PROTOCOLO -DSISTEMA_AUTOREFERENCIAR=0 -o "$OUT/test_protocolo.exe" "$H/test_sistema.c" "$H/mock_motor.c" "$H/mock_finales.c"     "$H/mock_adc.c" "$H/mock_tcs3200.c"     src/aplicacion/sistema.c src/aplicacion/carro.c src/aplicacion/eje.c src/aplicacion/deteccion.c src/aplicacion/protocolo.c     src/dominio/posicion.c src/dominio/limites.c src/dominio/escala.c src/dominio/selector.c src/dominio/color.c     src/dominio/historial.c src/dominio/proximidad.c src/drivers/proximidad.c -lm
+"$OUT/test_protocolo.exe"
+
+echo
 echo "== Máquina de estados (sistema + eje + IR de proximidad + sensor de color simulados) =="
-gcc $CFLAGS -o "$OUT/test_sistema.exe" "$H/test_sistema.c" "$H/mock_motor.c" "$H/mock_finales.c"     "$H/mock_adc.c" "$H/mock_tcs3200.c"     src/aplicacion/sistema.c src/aplicacion/carro.c src/aplicacion/eje.c src/aplicacion/deteccion.c     src/dominio/posicion.c src/dominio/limites.c src/dominio/escala.c src/dominio/color.c     src/dominio/historial.c src/dominio/proximidad.c src/drivers/proximidad.c -lm
+gcc $CFLAGS -DSISTEMA_AUTOREFERENCIAR=0 -o "$OUT/test_sistema.exe" "$H/test_sistema.c" "$H/mock_motor.c" "$H/mock_finales.c"     "$H/mock_adc.c" "$H/mock_tcs3200.c"     src/aplicacion/sistema.c src/aplicacion/carro.c src/aplicacion/eje.c src/aplicacion/deteccion.c     src/dominio/posicion.c src/dominio/limites.c src/dominio/escala.c src/dominio/selector.c src/dominio/color.c     src/dominio/historial.c src/dominio/proximidad.c src/drivers/proximidad.c -lm
 "$OUT/test_sistema.exe"
+

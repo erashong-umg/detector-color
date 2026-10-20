@@ -25,4 +25,5 @@ def montaje(lista, nombre, columnas):
 montaje(imagenes[0:4], "montaje_principal.png", 2)
 montaje(imagenes[4:8], "montaje_menus.png", 2)
 montaje(imagenes[8:10], "montaje_mover_info.png", 2)
+montaje(imagenes[10:14], "montaje_asistente.png", 2)
 print("%d pantallas -> montaje_*.png en %s" % (len(imagenes), carpeta))
