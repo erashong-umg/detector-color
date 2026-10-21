@@ -5,7 +5,7 @@
             "label": "Compile Project",
             "type": "process",
             "isBuildCommand": true,
-            "command": "D:/dev/pico-sdk/ninja/v1.13.2/ninja",
+            "command": "${userHome}/.pico-sdk/ninja/v1.13.2/ninja",
             "args": ["-C", "${workspaceFolder}/build"],
             "group": "build",
             "presentation": {
@@ -14,13 +14,13 @@
             },
             "problemMatcher": "$gcc",
             "windows": {
-                "command": "D:/dev/pico-sdk/ninja/v1.13.2/ninja.exe"
+                "command": "${env:USERPROFILE}/.pico-sdk/ninja/v1.13.2/ninja.exe"
             }
         },
         {
             "label": "Run Project",
             "type": "process",
-            "command": "D:/dev/pico-sdk/picotool/2.3.1/picotool/picotool",
+            "command": "${env:HOME}/.pico-sdk/picotool/2.3.1/picotool/picotool",
             "args": [
                 "load",
                 "${command:raspberry-pi-pico.launchTargetPath}",
@@ -32,16 +32,16 @@
             },
             "problemMatcher": [],
             "windows": {
-                "command": "D:/dev/pico-sdk/picotool/2.3.1/picotool/picotool.exe"
+                "command": "${env:USERPROFILE}/.pico-sdk/picotool/2.3.1/picotool/picotool.exe"
             }
         },
         {
             "label": "Flash",
             "type": "process",
-            "command": "D:/dev/pico-sdk/openocd/0.12.0+dev/openocd.exe",
+            "command": "${userHome}/.pico-sdk/openocd/0.12.0+dev/openocd.exe",
             "args": [
                 "-s",
-                "D:/dev/pico-sdk/openocd/0.12.0+dev/scripts",
+                "${userHome}/.pico-sdk/openocd/0.12.0+dev/scripts",
                 "-f",
                 "interface/cmsis-dap.cfg",
                 "-f",
@@ -51,35 +51,16 @@
             ],
             "problemMatcher": [],
             "windows": {
-                "command": "D:/dev/pico-sdk/openocd/0.12.0+dev/openocd.exe"
-            }
-        },
-        {
-            "label": "Flash (ST-Link)",
-            "type": "process",
-            "command": "D:/dev/pico-sdk/openocd/0.12.0+dev/openocd.exe",
-            "args": [
-                "-s",
-                "D:/dev/pico-sdk/openocd/0.12.0+dev/scripts",
-                "-f",
-                "interface/stlink.cfg",
-                "-f",
-                "${workspaceFolder}/.vscode/openocd/rp2040-stlink.cfg",
-                "-c",
-                "adapter speed 5000; program \"${command:raspberry-pi-pico.launchTargetPath}\" verify reset exit"
-            ],
-            "problemMatcher": [],
-            "windows": {
-                "command": "D:/dev/pico-sdk/openocd/0.12.0+dev/openocd.exe"
+                "command": "${env:USERPROFILE}/.pico-sdk/openocd/0.12.0+dev/openocd.exe"
             }
         },
         {
             "label": "Rescue Reset",
             "type": "process",
-            "command": "D:/dev/pico-sdk/openocd/0.12.0+dev/openocd.exe",
+            "command": "${userHome}/.pico-sdk/openocd/0.12.0+dev/openocd.exe",
             "args": [
                 "-s",
-                "D:/dev/pico-sdk/openocd/0.12.0+dev/scripts",
+                "${userHome}/.pico-sdk/openocd/0.12.0+dev/scripts",
                 "-f",
                 "interface/cmsis-dap.cfg",
                 "-f",
@@ -89,16 +70,16 @@
             ],
             "problemMatcher": [],
             "windows": {
-                "command": "D:/dev/pico-sdk/openocd/0.12.0+dev/openocd.exe"
+                "command": "${env:USERPROFILE}/.pico-sdk/openocd/0.12.0+dev/openocd.exe"
             }
         },
         {
             "label": "RISC-V Reset (RP2350)",
             "type": "process",
-            "command": "D:/dev/pico-sdk/openocd/0.12.0+dev/openocd.exe",
+            "command": "${userHome}/.pico-sdk/openocd/0.12.0+dev/openocd.exe",
             "args": [
                 "-s",
-                "D:/dev/pico-sdk/openocd/0.12.0+dev/scripts",
+                "${userHome}/.pico-sdk/openocd/0.12.0+dev/scripts",
                 "-c",
                 "set USE_CORE { rv0 rv1 cm0 cm1 }",
                 "-f",
@@ -114,7 +95,7 @@
             ],
             "problemMatcher": [],
             "windows": {
-                "command": "D:/dev/pico-sdk/openocd/0.12.0+dev/openocd.exe"
+                "command": "${env:USERPROFILE}/.pico-sdk/openocd/0.12.0+dev/openocd.exe"
             }
         }
     ]
