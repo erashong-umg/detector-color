@@ -40,7 +40,7 @@ El `VM` del TB6612 necesita ~4,5–13,5 V: **no** puede salir de la fuente de 3V
 
 - Asignación de pines: `src/configuracion/pines.h` (con `_Static_assert` que detecta conflictos).
 - Para cablear: [`docs/conexiones.md`](docs/conexiones.md) (tabla por módulo, mapa por GPIO y
-  diagrama del conector). Se genera con `python tools/generar_conexiones.py`; no editar a mano.
+  diagrama del conector). Se genera con `tools/generar_conexiones.py`; no editar a mano.
 - Razonamiento, hipótesis y decisiones pendientes: [`docs/hardware.md`](docs/hardware.md).
 - Reparto del trabajo por temas entre los integrantes: [`docs/reparto-trabajo.md`](docs/reparto-trabajo.md).
 
