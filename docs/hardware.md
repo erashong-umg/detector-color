@@ -29,14 +29,15 @@ el archivo (tiene validación en compilación).
 | Botones B1–B4 | módulo **activo en ALTO** (resistencia a GND y el botón lleva el pin a 3V3): con la lógica en bajo se leían los cuatro pulsados; el SW del joystick es activo en bajo | `BOTONES_ACTIVO_ALTO 1` en `entradas.h` |
 | VM del TB6612 | **5 V** de una fuente aparte, con GND común | — |
 | Potencia mínima del motor con 5 V | 30 %: apenas se mueve · 60 %: 2–4 mm · 80 %: a trompicones · 90 %: mejor · 100 %: con fuerza | `MOTOR_DUTY_MIN_PCT 90` |
-| Recorrido completo INICIO→FIN | **≈ 0,74–0,78 s** a `EJE_VEL_VIAJE` (duty ≈ 94 %); el comando `ESTADO` lo da en `cal_ms` | `EJE_RECORRIDO_ESPERADO_MS 1000`, `EJE_RECORRIDO_MIN_MS 200`, `CARRO_TIMEOUT_MS 2500` |
+| Recorrido completo INICIO→FIN | **320 mm** medidos con regla entre las posiciones de INICIO y FIN, y **≈ 0,74–0,79 s** a `EJE_VEL_VIAJE` (duty ≈ 94 %, ≈ 410 mm/s); el comando `ESTADO` lo da en `cal_ms` | `EJE_RECORRIDO_ESPERADO_MS 1000`, `EJE_RECORRIDO_MIN_MS 200`, `CARRO_TIMEOUT_MS 2500` |
 | TCS3200 con el pin LED a 3V3 | sin muestra ≈ 800–3500 Hz (cambia con la luz del cuarto); negro ≈ 1000 / 1100 / 1400 Hz (R/G/B) y C ≈ 3500; blanco ≈ 9000–11000 Hz y C ≈ 29 000. Recortes posibles en B (≈ 12 kHz) con muestras muy claras | `tcs3200.h` |
 | Detección de color (calibrado negro y blanco) | rojo H = 0°, verde H ≈ 105–112°, azul claro H ≈ 217°; un azul muy oscuro (V ≈ 4) no es fiable | — |
 | IR de proximidad | **OD activa en bajo**; OA **se satura**: sin objeto ≈ 4000, con papel blanco 70–270 a cualquier distancia dentro del alcance (no distingue «cerca» de «ok»); **no ve el negro** (casi tocando, ≈ 4000) | `PROX_NIVEL_CERCA 3990` (estado «cerca» inalcanzable) y B1 mantenido fuerza la medición |
 | Pantalla ST7789 | 240×320 sin offsets; el ruido de abajo era la RAM sin escribir | `pantalla.h` |
 
-Pendiente de medir: precisión de las tres posiciones con regla, arranque pegado al FIN y al INICIO, y
-el valor real de S0/S1 del TCS3200 (el cambio de cableado no alteró las frecuencias).
+Pendiente de medir: precisión de las tres posiciones con regla (en curso: las paradas ideales son 53,3 / 160,0 /
+266,7 mm desde el INICIO; la primera parada en 160 mm quedó, según el firmware, en 159,5 mm), arranque pegado al
+FIN y al INICIO, y el valor real de S0/S1 del TCS3200 (el cambio de cableado no alteró las frecuencias).
 
 ## 2. Pinout propuesto
 
@@ -223,10 +224,10 @@ Código: `aplicacion/eje.c`, `dominio/posicion.c`; parámetros en `configuracion
   incoherentes ni con el sentido invertido.
 - **Ciclo de referencia (B2 en la prueba):** busca el INICIO despacio → fija 0 →
   recorre hasta el FINAL midiendo el tiempo y la velocidad aplicada → vuelve al INICIO.
-- **Modelo:** `posición = ∫velocidad·dt / ∫total × 350 mm`. No hace falta conocer los
+- **Modelo:** `posición = ∫velocidad·dt / ∫total × 320 mm`. No hace falta conocer los
   mm/s; la rampa y la zona muerta del motor quedan incluidas en la medición.
 - **Resincronización:** cada vez que el carrito toca un final se reajusta la posición,
-  así que el error no se acumula entre viajes. Los destinos 0 y 350 mm se alcanzan
+  así que el error no se acumula entre viajes. Los destinos 0 y 320 mm se alcanzan
   *hasta el final de carrera real*, no por estimación.
 - **Exactitud (código real ejecutado en el PC, `test/host/`):** un motor ideal da
   ≤ 1,6 mm. Con una variación de velocidad de ±3 % en cada viaje (tensión,
@@ -289,9 +290,9 @@ Código: `dominio/escala.c`, `aplicacion/deteccion.c`; parámetros en `configura
 
 | Parámetro | Qué es | Valor actual |
 |---|---|---|
-| `EJE_LONGITUD_UM` | recorrido REAL entre los dos finales de carrera | 320 mm (hipótesis) |
-| `ESCALA_ANCHO_UM` | ancho de la zona de trabajo (se divide en tres tercios) | 320 mm (hipótesis) |
-| `ESCALA_DESPLAZAMIENTO_UM` | del final INICIO al borde izquierdo de la zona de trabajo | 0 (hipótesis) |
+| `EJE_LONGITUD_UM` | recorrido REAL entre los dos finales de carrera | 320 mm (**medido con regla**) |
+| `ESCALA_ANCHO_UM` | ancho de la zona de trabajo (se divide en tres tercios) | 320 mm (= todo el recorrido) |
+| `ESCALA_DESPLAZAMIENTO_UM` | del final INICIO al borde izquierdo de la zona de trabajo | 0 (la zona empieza en el final INICIO) |
 | `ESCALA_TONO_FRIO_DESDE` / `ESCALA_TONO_CALIDO_DESDE` | cortes de tono cálido / frío | 75° / 315° (hipótesis) |
 
 El build falla si `desplazamiento + ancho > recorrido`. Conviene calibrar los cortes de

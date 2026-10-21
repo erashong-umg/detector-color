@@ -213,14 +213,14 @@ El firmware compila sin avisos y se ha **probado en la placa** (2026-10-20):
 
 - Pantalla, botones (B1–B4 activos en alto), joystick, buzzer, TCS3200 y detección de color (rojo, verde, azul),
   IR de proximidad (con sus límites: satura y no ve el negro) y finales de carrera de INICIO y FIN.
-- Motor con VM = 5 V: sentido hacia el FIN correcto, potencia mínima 90 %, recorrido completo en ≈ 0,75 s.
+- Motor con VM = 5 V: sentido hacia el FIN correcto, potencia mínima 90 %, recorrido completo de **320 mm** (medido con regla) en ≈ 0,75 s.
 - Referencia automática al encender desde la posición en que esté el carrito, recuperación al desconectar y reconectar un final
   de carrera, asistente de inicio, modo manual (selector de color), protocolo serie por USB y menú con B2/B3.
 
 **Pendiente de verificar en el banco:**
 
-- **Precisión de las tres paradas** (cálido, neutro, frío) con regla; con un recorrido tan rápido la simulación predice errores de
-  hasta ≈ 30 mm. Es lo más importante que queda.
+- **Precisión de las tres paradas** (cálido 53,3 mm, neutro 160,0 mm, frío 266,7 mm desde el INICIO) con regla: **en curso**; con un
+  recorrido tan rápido la simulación predice errores de hasta ≈ 30 mm. Es lo más importante que queda.
 - Arranque con el carrito **pegado al FIN** y **pegado al INICIO**, y que no golpee los topes.
 - **Subir VM** (el TB6612 admite hasta ≈ 13,5 V) para ir más lento y poder bajar la potencia mínima.
 - Escala real de S0/S1 del TCS3200 (≈ 12 kHz de máximo con blanco) y si el IR de proximidad altera la lectura.

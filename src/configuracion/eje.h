@@ -1,5 +1,5 @@
 /*
- * eje.h — Parámetros del eje lineal (carrito sobre 350 mm) y del
+ * eje.h — Parámetros del eje lineal (carrito sobre 320 mm) y del
  * posicionamiento por tiempo.
  *
  * HIPÓTESIS: el modelo "recorrido ∝ ∫ velocidad dt" es aproximado; el motor
@@ -11,7 +11,8 @@
 #ifndef CONFIG_EJE_H
 #define CONFIG_EJE_H
 
-/* Longitud útil de la escala, en micrómetros (350 mm). */
+/* Longitud útil del eje, en micrómetros (320 mm: medido con regla entre los dos finales de carrera,
+   coincide con lo previsto). */
 #define EJE_LONGITUD_UM        320000
 
 /* Velocidades (% de 1..100).
