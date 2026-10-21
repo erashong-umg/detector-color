@@ -35,9 +35,22 @@ el archivo (tiene validación en compilación).
 | IR de proximidad | **OD activa en bajo**; OA **se satura**: sin objeto ≈ 4000, con papel blanco 70–270 a cualquier distancia dentro del alcance (no distingue «cerca» de «ok»); **no ve el negro** (casi tocando, ≈ 4000) | `PROX_NIVEL_CERCA 3990` (estado «cerca» inalcanzable) y B1 mantenido fuerza la medición |
 | Pantalla ST7789 | 240×320 sin offsets; el ruido de abajo era la RAM sin escribir | `pantalla.h` |
 
-Pendiente de medir: precisión de las tres posiciones con regla (en curso: las paradas ideales son 53,3 / 160,0 /
-266,7 mm desde el INICIO; la primera parada en 160 mm quedó, según el firmware, en 159,5 mm), arranque pegado al
-FIN y al INICIO, y el valor real de S0/S1 del TCS3200 (el cambio de cableado no alteró las frecuencias).
+**Precisión de las paradas (2026-10-20, regla de 320 mm, `IR <mm>` por el puerto serie, parada ideal a 160,0 mm,
+llegando desde el FIN tras ir al extremo):**
+
+| Repetición | Marca en la regla | Error | Posición que estimaba el firmware |
+|---|---|---|---|
+| 1 | 159,8 mm | −0,2 mm | 159,5 mm |
+| 2 | 160,0 mm | 0,0 mm | 161,5 mm |
+| 3 (desde el INICIO) | sin leer | — | 158,5 mm |
+
+Con solo dos medidas reales el error fue ≤ 0,2 mm en la parada **neutra**: mucho mejor que lo que predice la
+simulación (hasta ≈ 30 mm). Hay que tomar con cautela que la estimación interna cambia ±2 mm entre repeticiones aunque
+la parada real fue casi igual, y que **no se midieron** las paradas cálida (53,3 mm) y fría (266,7 mm), que son las que
+llegan tras un tramo más largo o desde el otro extremo.
+
+Pendiente de medir: las paradas cálida y fría con regla (y varias repeticiones, también llegando desde el INICIO),
+arranque pegado al FIN y al INICIO, y el valor real de S0/S1 del TCS3200 (el cambio de cableado no alteró las frecuencias).
 
 ## 2. Pinout propuesto
 

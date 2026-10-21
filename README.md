@@ -219,8 +219,9 @@ El firmware compila sin avisos y se ha **probado en la placa** (2026-10-20):
 
 **Pendiente de verificar en el banco:**
 
-- **Precisión de las tres paradas** (cálido 53,3 mm, neutro 160,0 mm, frío 266,7 mm desde el INICIO) con regla: **en curso**; con un
-  recorrido tan rápido la simulación predice errores de hasta ≈ 30 mm. Es lo más importante que queda.
+- **Precisión de las paradas** con regla (cálido 53,3 mm, neutro 160,0 mm, frío 266,7 mm desde el INICIO). Medido hasta ahora: el neutro
+  quedó en 159,8 y 160,0 mm (error ≤ 0,2 mm en dos repeticiones); **faltan el cálido y el frío** y más repeticiones, también llegando desde el
+  INICIO. La simulación, con este recorrido tan rápido, predecía errores de hasta ≈ 30 mm y no se ha cumplido en el neutro.
 - Arranque con el carrito **pegado al FIN** y **pegado al INICIO**, y que no golpee los topes.
 - **Subir VM** (el TB6612 admite hasta ≈ 13,5 V) para ir más lento y poder bajar la potencia mínima.
 - Escala real de S0/S1 del TCS3200 (≈ 12 kHz de máximo con blanco) y si el IR de proximidad altera la lectura.
