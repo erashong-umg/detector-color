@@ -8,6 +8,10 @@
    la distancia correcta. Pasado, se cancela. */
 #define SISTEMA_ESPERA_OBJETO_MS    8000u
 
+/* Tiempo máximo para recoger los DETECCION_MUESTRAS juegos de la ISR (cada uno tarda ≈ 88 ms).
+   Si se pasa, el sensor no está generando datos y se aborta la medida. */
+#define SISTEMA_MEDIDA_MAX_MS       1500u
+
 /* El objeto debe estar a la distancia correcta de forma continua este tiempo
    antes de medir (evita medir mientras se está colocando). */
 #define SISTEMA_PROX_ESTABLE_MS     300u

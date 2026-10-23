@@ -73,6 +73,11 @@ add_executable(detector_color
     src/pruebas/prueba_eje.c
     src/pruebas/prueba_mapeo.c
     src/pruebas/prueba_proximidad.c
+    src/pruebas/prueba_isr.c
+    src/pruebas/prueba_ciclos.c
+    src/drivers/tcs3200_async.c
+    src/dominio/color_rapido.c
+    src/dominio/color_ref_float.c
 )
 
 target_include_directories(detector_color PRIVATE src)

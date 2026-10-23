@@ -21,6 +21,8 @@
 #define PRUEBA_MAPEO        7
 #define PRUEBA_PROXIMIDAD   8
 #define MODO_APLICACION     9
+#define PRUEBA_ISR          10
+#define PRUEBA_CICLOS       11
 
 #define PRUEBA_ACTIVA       MODO_APLICACION
 
@@ -55,6 +57,10 @@ int main(void)
     prueba_mapeo();
 #elif PRUEBA_ACTIVA == PRUEBA_PROXIMIDAD
     prueba_proximidad();
+#elif PRUEBA_ACTIVA == PRUEBA_ISR
+    prueba_isr();
+#elif PRUEBA_ACTIVA == PRUEBA_CICLOS
+    prueba_ciclos();
 #elif PRUEBA_ACTIVA == MODO_APLICACION
     app_ejecutar(leer_usb);
 #else

@@ -222,6 +222,8 @@ empuja corriente por sus salidas hacia GPIO sin alimentar.
 | 11 | GP8 | TB6612 · PWMA | PWM4 A |
 | 12 | GP9 | TB6612 · AIN1 | salida |
 | 14 | GP10 | TB6612 · AIN2 | salida |
+| 15 | GP11 | Depuración · ISR del TCS3200 | salida; alto mientras corre la ISR (Fase 2) |
+| 16 | GP12 | Depuración · bucle principal | salida; conmuta en cada vuelta (Fase 2) |
 | 19 | GP14 | Botón 1 · medir | entrada, pull-down (activo en alto) |
 | 20 | GP15 | Buzzer | PWM7 B |
 | 21 | GP16 | ST7789 · DC | salida |
@@ -235,7 +237,7 @@ empuja corriente por sus salidas hacia GPIO sin alimentar.
 | 32 | GP27 | Joystick · JY | ADC1 |
 | 34 | GP28 | IR proximidad · OA | ADC2 |
 
-Quedan libres **GP11, GP12 y GP13** (antes el LED RGB); el resto de los GPIO utilizables está asignado. **No usar** GP23, GP24, GP25 ni GP29:
+Queda libre **GP13** (antes el LED RGB); GP11 y GP12 son pines de depuración de la Fase 2 (opcionales, sin conectar nada salvo un osciloscopio o analizador lógico); el resto de los GPIO utilizables está asignado. **No usar** GP23, GP24, GP25 ni GP29:
 los ocupa el chip Wi-Fi (CYW43) de la Pico W. Los pines 3, 8, 13, 18, 23, 28, 33 y 38 son GND.
 
 ## 4. Componentes externos recomendados
@@ -265,8 +267,8 @@ los ocupa el chip Wi-Fi (CYW43) de la Pico W. Los pines 3, 8, 13, 18, 23, 28, 33
                  TB6612 · AIN1 GP9 12 |      | 29 GP22 Joystick · SW (= B1)
                                GND 13 |      | 28 GND
                 TB6612 · AIN2 GP10 14 |      | 27 GP21 Botón 3 · bajar en el menú
-                      (libre) GP11 15 |      | 26 GP20 Botón 2 · calibrar / menú
-                      (libre) GP12 16 |      | 25 GP19 ST7789 · SDA
+ Depuración · ISR del TCS3200 GP11 15 |      | 26 GP20 Botón 2 · calibrar / menú
+ Depuración · bucle principal GP12 16 |      | 25 GP19 ST7789 · SDA
                       (libre) GP13 17 |      | 24 GP18 ST7789 · SCK
                                GND 18 |      | 23 GND
               Botón 1 · medir GP14 19 |      | 22 GP17 ST7789 · RES

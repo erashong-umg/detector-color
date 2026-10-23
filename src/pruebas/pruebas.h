@@ -13,5 +13,7 @@ void prueba_motor(void);        /* etapa 5: TB6612, motor, finales */
 void prueba_eje(void);          /* etapa 6: homing y posición      */
 void prueba_mapeo(void);        /* etapa 7: color → posición       */
 void prueba_proximidad(void);   /* etapa 9: diagnóstico del IR     */
+void prueba_isr(void);          /* fase 2: adquisición por interrupción */
+void prueba_ciclos(void);       /* fase 3: ciclos, CPI y speedup   */
 
 #endif /* PRUEBAS_H */

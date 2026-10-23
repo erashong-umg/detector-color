@@ -170,6 +170,8 @@ def funcion_gpio():
         "PIN_BOTON_2": ("Botón 2 · calibrar / menú", "entrada, pull-down (activo en alto)"),
         "PIN_BOTON_3": ("Botón 3 · bajar en el menú", "entrada, pull-down (activo en alto)"),
         "PIN_JOY_SW": ("Joystick · SW (= B1)", "entrada, pull-up (activo en bajo)"),
+        "PIN_DEP_ISR": ("Depuración · ISR del TCS3200", "salida; alto mientras corre la ISR (Fase 2)"),
+        "PIN_DEP_LAZO": ("Depuración · bucle principal", "salida; conmuta en cada vuelta (Fase 2)"),
         "PIN_JOY_X": ("Joystick · JX", "ADC0"),
         "PIN_JOY_Y": ("Joystick · JY", "ADC1"),
         "PIN_IR_PROX_A": ("IR proximidad · OA", "ADC2"),
@@ -257,7 +259,7 @@ def construir():
         if g in por_gpio:
             w("| %d | GP%d | %s | %s |" % (FISICO[g], g, por_gpio[g][0], por_gpio[g][1]))
     w("")
-    w("Quedan libres **GP11, GP12 y GP13** (antes el LED RGB); el resto de los GPIO utilizables está asignado. **No usar** GP23, GP24, GP25 ni GP29:")
+    w("Queda libre **GP13** (antes el LED RGB); GP11 y GP12 son pines de depuración de la Fase 2 (opcionales, sin conectar nada salvo un osciloscopio o analizador lógico); el resto de los GPIO utilizables está asignado. **No usar** GP23, GP24, GP25 ni GP29:")
     w("los ocupa el chip Wi-Fi (CYW43) de la Pico W. Los pines 3, 8, 13, 18, 23, 28, 33 y 38 son GND.")
     w("")
     w("## 4. Componentes externos recomendados")

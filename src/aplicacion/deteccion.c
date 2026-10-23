@@ -1,54 +1,71 @@
 #include "aplicacion/deteccion.h"
 
+#include <stddef.h>
+
 #include "aplicacion/eje.h"
 #include "configuracion/escala.h"
 #include "configuracion/tcs3200.h"
 #include "drivers/tcs3200.h"
+#include "drivers/tcs3200_async.h"
+#include "hw/tiempo.h"
 
 static color_calibracion_t cal;
 
+static void (*hook_espera)(void);
+
+/* Tarea en curso: promedio de DETECCION_MUESTRAS juegos que llegan desde la ISR. */
+static bool         activa;
+static det_tarea_t  tarea;
+static int          juegos;
+static uint64_t     suma_r, suma_g, suma_b, suma_c;
+
 void deteccion_poner_espera(void (*hook)(void))
 {
-    tcs3200_poner_espera(hook);
+    hook_espera = hook;
 }
 
 void deteccion_iniciar(void)
 {
     tcs3200_iniciar();
+    activa = false;
     deteccion_borrar_calibracion();
 }
 
-/* Promedio de n mediciones. false si alguna desbordó el contador. */
-static bool medir_promedio(color_frecuencias_t *f)
+bool deteccion_ocupada(void)
 {
-    uint64_t r = 0, g = 0, b = 0, c = 0;
-
-    for (int i = 0; i < DETECCION_MUESTRAS; i++) {
-        tcs_frecuencias_t m;
-        if (!tcs3200_medir(&m)) {
-            return false;
-        }
-        r += m.r; g += m.g; b += m.b; c += m.c;
-    }
-    f->r = (uint32_t)(r / DETECCION_MUESTRAS);
-    f->g = (uint32_t)(g / DETECCION_MUESTRAS);
-    f->b = (uint32_t)(b / DETECCION_MUESTRAS);
-    f->c = (uint32_t)(c / DETECCION_MUESTRAS);
-    /* Sin señal en el canal claro: el sensor está desconectado o sin alimentación. */
-    return f->c >= TCS_FRECUENCIA_MIN_HZ;
+    return activa;
 }
 
-bool deteccion_medir(lectura_t *l)
+bool deteccion_empezar(det_tarea_t t)
+{
+    if (activa || !eje_quieto()) {
+        return false;
+    }
+    tarea = t;
+    juegos = 0;
+    suma_r = suma_g = suma_b = suma_c = 0;
+    activa = true;
+    tcs3200_async_iniciar();
+    return true;
+}
+
+void deteccion_cancelar(void)
+{
+    if (activa) {
+        tcs3200_async_detener();
+        activa = false;
+    }
+}
+
+/* Con las frecuencias medias ya calculadas: rellena la lectura (tarea MEDIR). */
+static bool completar_lectura(const color_frecuencias_t *f, lectura_t *l)
 {
     l->valida = false;
     l->escala.clase = ESCALA_NEGRO;
     l->escala.temperatura = TEMP_NEUTRO;
     l->escala.x_um = -1;
+    l->f = *f;
 
-    /* Medir bloquea ≈ 270 ms sin vigilar los finales: solo con el carrito parado. */
-    if (!eje_quieto() || !medir_promedio(&l->f)) {
-        return false;
-    }
     if (!color_normalizar(&cal, &l->f, &l->rgb)) {
         return false;
     }
@@ -59,22 +76,87 @@ bool deteccion_medir(lectura_t *l)
     return true;
 }
 
-bool deteccion_calibrar_negro(void)
+det_progreso_t deteccion_paso(lectura_t *l)
 {
-    if (!eje_quieto() || !medir_promedio(&cal.negro)) {
+    tcs_frecuencias_t m;
+    bool valido;
+
+    if (!activa) {
+        return DET_FALLO;
+    }
+    if (!tcs3200_async_tomar(&m, &valido)) {
+        return DET_PENDIENTE;
+    }
+    if (!valido) {                          /* el contador de 16 bits dio la vuelta */
+        deteccion_cancelar();
+        return DET_FALLO;
+    }
+
+    suma_r += m.r; suma_g += m.g; suma_b += m.b; suma_c += m.c;
+    if (++juegos < DETECCION_MUESTRAS) {
+        return DET_PENDIENTE;
+    }
+    deteccion_cancelar();                   /* ya hay todos los juegos: detiene la ISR */
+
+    color_frecuencias_t f = {
+        (uint32_t)(suma_r / DETECCION_MUESTRAS),
+        (uint32_t)(suma_g / DETECCION_MUESTRAS),
+        (uint32_t)(suma_b / DETECCION_MUESTRAS),
+        (uint32_t)(suma_c / DETECCION_MUESTRAS),
+    };
+    /* Sin señal en el canal claro: el sensor está desconectado o sin alimentación. */
+    if (f.c < TCS_FRECUENCIA_MIN_HZ) {
+        return DET_FALLO;
+    }
+
+    switch (tarea) {
+    case DET_TAREA_CAL_NEGRO:
+        cal.negro = f;
+        cal.hay_negro = true;
+        return DET_LISTO;
+    case DET_TAREA_CAL_BLANCO:
+        cal.blanco = f;
+        cal.hay_blanco = true;
+        return DET_LISTO;
+    case DET_TAREA_MEDIR:
+    default:
+        return completar_lectura(&f, l) ? DET_LISTO : DET_FALLO;
+    }
+}
+
+/* Versión que espera: para las pruebas de banco (no se usa en la aplicación). */
+static bool esperar_tarea(det_tarea_t t, lectura_t *l)
+{
+    lectura_t descartada;
+
+    if (!deteccion_empezar(t)) {
         return false;
     }
-    cal.hay_negro = true;
-    return true;
+    for (;;) {
+        det_progreso_t r = deteccion_paso(l ? l : &descartada);
+        if (r != DET_PENDIENTE) {
+            return r == DET_LISTO;
+        }
+        if (hook_espera) {
+            hook_espera();
+        }
+        tiempo_esperar_us(100);
+    }
+}
+
+bool deteccion_medir(lectura_t *l)
+{
+    return esperar_tarea(DET_TAREA_MEDIR, l);
+}
+
+bool deteccion_calibrar_negro(void)
+{
+    return esperar_tarea(DET_TAREA_CAL_NEGRO, NULL);
 }
 
 bool deteccion_calibrar_blanco(void)
 {
-    if (!eje_quieto() || !medir_promedio(&cal.blanco)) {
-        return false;
-    }
-    cal.hay_blanco = true;
-    return true;
+    return esperar_tarea(DET_TAREA_CAL_BLANCO, NULL);
 }
 
 void deteccion_borrar_calibracion(void)

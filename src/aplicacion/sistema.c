@@ -36,6 +36,8 @@ static uint32_t auto_espera_ms;      /* espera antes del próximo intento */
 static bool     auto_pendiente;  /* falta la referencia automática del arranque */
 static uint32_t t_auto;
 static bool     analisis_avisado;   /* ya se emitió ANALIZANDO: la próxima vuelta mide */
+static bool     midiendo;           /* la ISR del TCS3200 está adquiriendo (deteccion_empezar) */
+static uint32_t t_medida0;
 static bool     forzar_objeto;   /* B1 largo: medir sin esperar al IR (muestras oscuras) */
 static int      manual_vel;
 
@@ -77,8 +79,17 @@ static bool rechazar(sistema_rechazo_t motivo)
 /* Transiciones                                                        */
 /* ------------------------------------------------------------------ */
 
+static void abortar_medida(void)
+{
+    if (midiendo) {
+        deteccion_cancelar();           /* detiene la ISR y el contador */
+        midiendo = false;
+    }
+}
+
 static void volver_a_idle(void)
 {
+    abortar_medida();
     accion = ACC_NINGUNA;
     guia = guia_emitida = SIS_GUIA_NINGUNA;
     ok_activo = false;
@@ -89,6 +100,7 @@ static void volver_a_idle(void)
 
 static void entrar_error(void)
 {
+    abortar_medida();
     auto_referenciando = false;
     auto_pendiente = false;
     accion = ACC_NINGUNA;
@@ -129,15 +141,44 @@ static void cancelar_operacion(bool avisar)
 /* Medir y calibrar: esperar al objeto y actuar                        */
 /* ------------------------------------------------------------------ */
 
-static void ejecutar_accion(void)
+/* Arranca la adquisición por interrupción. No bloquea: paso_medida() la sigue en cada vuelta. */
+static void iniciar_accion(void)
 {
-    accion_t a = accion;
-    accion = ACC_NINGUNA;
+    det_tarea_t t = accion == ACC_MEDIR ? DET_TAREA_MEDIR
+                  : accion == ACC_CAL_NEGRO ? DET_TAREA_CAL_NEGRO : DET_TAREA_CAL_BLANCO;
+
     guia = guia_emitida = SIS_GUIA_NINGUNA;
     ok_activo = false;
 
+    if (!deteccion_empezar(t)) {
+        volver_a_idle();
+        emitir(SIS_EVT_LECTURA_INVALIDA);
+        return;
+    }
+    midiendo = true;
+    t_medida0 = tiempo_us();
+}
+
+/* Sigue la adquisición: cuando llegan todos los juegos, hace lo que antes hacía la medición
+   bloqueante (apuntar el carrito, o guardar la calibración). */
+static void paso_medida(uint32_t ahora)
+{
+    det_progreso_t r = deteccion_paso(&lectura);
+
+    if (r == DET_PENDIENTE) {
+        if ((uint32_t)(ahora - t_medida0) >= SISTEMA_MEDIDA_MAX_MS * 1000u) {
+            volver_a_idle();                /* la ISR no entregó datos: sensor parado */
+            emitir(SIS_EVT_LECTURA_INVALIDA);
+        }
+        return;
+    }
+
+    accion_t a = accion;
+    midiendo = false;
+    accion = ACC_NINGUNA;
+
     if (a == ACC_MEDIR) {
-        if (!deteccion_medir(&lectura)) {
+        if (r != DET_LISTO) {
             volver_a_idle();
             emitir(SIS_EVT_LECTURA_INVALIDA);
             return;
@@ -157,9 +198,8 @@ static void ejecutar_accion(void)
     }
 
     bool negro = (a == ACC_CAL_NEGRO);
-    bool ok = negro ? deteccion_calibrar_negro() : deteccion_calibrar_blanco();
     volver_a_idle();
-    emitir(ok ? (negro ? SIS_EVT_CAL_NEGRO : SIS_EVT_CAL_BLANCO) : SIS_EVT_LECTURA_INVALIDA);
+    emitir(r == DET_LISTO ? (negro ? SIS_EVT_CAL_NEGRO : SIS_EVT_CAL_BLANCO) : SIS_EVT_LECTURA_INVALIDA);
 }
 
 static void paso_espera_objeto(uint32_t ahora)
@@ -197,13 +237,13 @@ static void paso_espera_objeto(uint32_t ahora)
     }
 
     if (listo && !analisis_avisado) {
-        /* Medir bloquea ≈ 270 ms: se avisa una vuelta antes para que el sonido ya esté
-           sonando mientras se analiza. */
+        /* Se avisa una vuelta antes de arrancar la adquisición para que el sonido y la
+           pantalla de "analizando" ya estén activos. */
         analisis_avisado = true;
         emitir(SIS_EVT_ANALIZANDO);
     } else if (listo) {
         analisis_avisado = false;
-        ejecutar_accion();
+        iniciar_accion();
     } else {
         analisis_avisado = false;
         if ((uint32_t)(ahora - t_espera0) >= SISTEMA_ESPERA_OBJETO_MS * 1000u) {
@@ -322,7 +362,11 @@ void sistema_actualizar(void)
 
     case SIS_MEASURE:
     case SIS_CALIBRATE:
-        paso_espera_objeto(ahora);
+        if (midiendo) {
+            paso_medida(ahora);
+        } else {
+            paso_espera_objeto(ahora);
+        }
         break;
 
     case SIS_MOVE_TO_TARGET:

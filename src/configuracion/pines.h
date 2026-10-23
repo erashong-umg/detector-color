@@ -76,7 +76,11 @@
 #define PIN_JOY_SW        22u   /* igual que Lunar Lander */
 
 /* ------------------------------------------------------------------ */
-/* Libres: GP11, GP12 y GP13 (antes el LED RGB, ya retirado).          */
+/* Pines de depuración de la Fase 2 (traza con osciloscopio o analizador lógico): */
+#define PIN_DEP_ISR       11u   /* alto mientras corre la ISR del TCS3200       */
+#define PIN_DEP_LAZO      12u   /* conmuta en cada vuelta del bucle principal   */
+
+/* Libre: GP13 (antes el LED RGB, ya retirado).                         */
 /* Reservados por el CYW43 en la Pico W — NO USAR:                     */
 /*   GP23 WL_ON, GP24 WL_D, GP25 WL_CS, GP29 WL_CLK / ADC3 (VSYS/3)    */
 /* ------------------------------------------------------------------ */
@@ -99,7 +103,8 @@
     PIN_M(PIN_MOTOR_AIN2) OP                                                                 \
     PIN_M(PIN_BUZZER) OP                                                                     \
     PIN_M(PIN_BOTON_1) OP PIN_M(PIN_BOTON_2) OP PIN_M(PIN_BOTON_3) OP PIN_M(PIN_BOTON_4) OP  \
-    PIN_M(PIN_JOY_X) OP PIN_M(PIN_JOY_Y) OP PIN_M(PIN_JOY_SW)
+    PIN_M(PIN_JOY_X) OP PIN_M(PIN_JOY_Y) OP PIN_M(PIN_JOY_SW) OP                             \
+    PIN_M(PIN_DEP_ISR) OP PIN_M(PIN_DEP_LAZO)
 
 #define PINES_USADOS   (PINES_LISTA(|))
 

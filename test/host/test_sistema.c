@@ -22,7 +22,7 @@ extern int planta_dir;
 extern double planta_duty;
 extern int mock_adc_prox, mock_od_nivel;
 extern tcs_frecuencias_t mock_frecuencias;
-extern int mock_tcs_desborde, mock_tcs_llamadas;
+extern int mock_tcs_desborde, mock_tcs_llamadas, mock_tcs_async_activo;
 
 double planta_x_um;
 int ini_roto, fin_roto;
@@ -85,6 +85,9 @@ static int hubo(const char *trozo)
     return 0;
 }
 #endif
+
+/* La adquisición por ISR ya no bloquea: DETECCION_MUESTRAS juegos de 88 ms van pasando en el bucle. */
+#define MEDIDA_MS  (DETECCION_MUESTRAS * 88 + 40)
 
 static void avanzar(int ms)
 {
@@ -206,18 +209,18 @@ int main(void)
     color(0, 0, 0);
     limpiar_salida(); protocolo_procesar_linea("CAL NEGRO");
     COMPROBAR(hubo("OK"), "CAL NEGRO");
-    avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(hubo("EVT,ANALIZANDO") && hubo("EVT,CAL_NEGRO"), "eventos de calibrar el negro");
     color(255, 255, 255);
     limpiar_salida(); protocolo_procesar_linea("CAL BLANCO");
-    avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(hubo("EVT,CAL_BLANCO"), "evento de calibrar el blanco");
 
     /* Medir un verde (frío) y ver la lectura. */
     color(40, 200, 60);
     limpiar_salida(); protocolo_procesar_linea("MEDIR");
     COMPROBAR(hubo("OK"), "MEDIR");
-    avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(hubo("EVT,MEDIDA,") && hubo("temp=FRIO") && hubo("clase=CROMATICO"), "EVT,MEDIDA con temperatura FRIO");
     COMPROBAR(hubo("obj_mm=266.7"), "el objetivo del frío debe ser 266.7 mm");
     limpiar_salida(); protocolo_procesar_linea("LECTURA");
@@ -318,7 +321,7 @@ int main(void)
     mock_frecuencias.r = mock_frecuencias.g = mock_frecuencias.b = mock_frecuencias.c = 0;
     prox(PROX_OK);
     COMPROBAR(sistema_calibrar(true), "calibrar negro se acepta");
-    avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(visto[SIS_EVT_LECTURA_INVALIDA] == 1 && !deteccion_hay_negro(), "sin señal: lectura inválida y sin guardar la calibración");
 
     printf("\n==========  %d comprobaciones correctas, %d fallos  ==========\n", pasa, falla);
@@ -408,7 +411,7 @@ int main(void)
     prox(PROX_OK);
     avanzar(SISTEMA_PROX_ESTABLE_MS / 2);
     COMPROBAR(sistema_estado() == SIS_CALIBRATE, "aún no debe medir: la distancia no lleva el tiempo estable");
-    avanzar(SISTEMA_PROX_ESTABLE_MS + 100);
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 100 + MEDIDA_MS);
     COMPROBAR(sistema_estado() == SIS_IDLE && visto[SIS_EVT_CAL_NEGRO] == 1, "debe calibrar el negro (estado %s)", sistema_estado_texto(sistema_estado()));
     /* una colocación inestable (entra y sale) no debe medir */
     color(255, 255, 255);
@@ -416,22 +419,22 @@ int main(void)
     int llamadas = mock_tcs_llamadas;
     for (int i = 0; i < 6; i++) { prox(PROX_OK); avanzar(120); prox(PROX_LEJOS); avanzar(120); }
     COMPROBAR(mock_tcs_llamadas == llamadas, "entrar y salir de la distancia correcta no debe medir");
-    prox(PROX_OK); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    prox(PROX_OK); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(visto[SIS_EVT_CAL_BLANCO] == 1, "debe calibrar el blanco");
     /* B1 largo: con una muestra oscura el IR no la ve; forzar ejecuta sin esperar a PROX_OK */
     sistema_calibrar(false);
-    prox(PROX_SIN_OBJETO); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    prox(PROX_SIN_OBJETO); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(sistema_estado() == SIS_CALIBRATE, "sin objeto y sin forzar debe seguir esperando");
-    sistema_forzar_objeto(); avanzar(100);
+    sistema_forzar_objeto(); avanzar(100 + MEDIDA_MS);
     COMPROBAR(sistema_estado() == SIS_IDLE && visto[SIS_EVT_CAL_BLANCO] == 2, "forzado debe calibrar sin esperar al IR (estado %s)", sistema_estado_texto(sistema_estado()));
     sistema_forzar_objeto();
     COMPROBAR(sistema_estado() == SIS_IDLE, "forzar fuera de MEASURE/CALIBRATE no debe hacer nada");
-    prox(PROX_OK); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);           /* el resto de pruebas parte con la muestra en su sitio */
+    prox(PROX_OK); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);           /* el resto de pruebas parte con la muestra en su sitio */
 
     TITULO("5. Medir un color frío y llevar el carrito");
     COMPROBAR(sistema_medir(), "medir con el color calibrado debe aceptarse (rechazo %d)", sistema_rechazo());
     color(40, 200, 60);                                /* verde: H ≈ 127° → frío */
-    avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(visto[SIS_EVT_MEDIDA] == 1, "falta el evento MEDIDA");
     COMPROBAR(sistema_hay_lectura(), "debe haber lectura");
     COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_FRIO, "el verde debe ser frío");
@@ -450,31 +453,31 @@ int main(void)
 
     TITULO("6. Cálido y neutro (colores sin tono)");
     memset(visto, 0, sizeof visto);
-    sistema_medir(); color(230, 40, 40); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    sistema_medir(); color(230, 40, 40); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_CALIDO, "el rojo debe ser cálido");
     COMPROBAR(sistema_objetivo_um() == ESCALA_POS_CALIDO_UM, "rojo: objetivo %.1f mm", sistema_objetivo_um() / 1000.0);
     COMPROBAR(sistema_estado() == SIS_MOVE_TO_TARGET, "rojo: debe moverse a la posición cálida");
     hasta_estado(SIS_IDLE, 60000); avanzar(500);
     COMPROBAR(fabs(planta_x_um - ESCALA_POS_CALIDO_UM) < 15000.0, "rojo: carrito en %.1f mm", planta_x_um / 1000);
     memset(visto, 0, sizeof visto);
-    sistema_medir(); color(250, 250, 250); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    sistema_medir(); color(250, 250, 250); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_NEUTRO, "blanco: debe ser neutro");
     COMPROBAR(sistema_objetivo_um() == ESCALA_POS_NEUTRO_UM, "blanco: objetivo %.1f mm", sistema_objetivo_um() / 1000.0);
     COMPROBAR(sistema_estado() == SIS_MOVE_TO_TARGET, "blanco: debe moverse a la posición neutra");
     hasta_estado(SIS_IDLE, 60000); avanzar(500);
     COMPROBAR(fabs(planta_x_um - ESCALA_POS_NEUTRO_UM) < 15000.0, "blanco: carrito en %.1f mm", planta_x_um / 1000);
     memset(visto, 0, sizeof visto);
-    sistema_medir(); color(10, 10, 10); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    sistema_medir(); color(10, 10, 10); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_NEUTRO && visto[SIS_EVT_MEDIDA] == 1, "negro: neutro y evento MEDIDA");
     COMPROBAR(sistema_estado() == SIS_IDLE, "negro: ya está en la posición neutra, no se mueve");
     memset(visto, 0, sizeof visto);
-    sistema_medir(); color(120, 120, 120); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    sistema_medir(); color(120, 120, 120); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(sistema_lectura()->escala.temperatura == TEMP_NEUTRO && visto[SIS_EVT_MEDIDA] == 1, "gris: neutro y evento MEDIDA");
 
     TITULO("7. Lectura inválida (desborde del sensor)");
     memset(visto, 0, sizeof visto);
     mock_tcs_desborde = 1;
-    sistema_medir(); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    sistema_medir(); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(visto[SIS_EVT_LECTURA_INVALIDA] == 1, "falta LECTURA_INVALIDA");
     COMPROBAR(sistema_estado() == SIS_IDLE, "debe volver a IDLE tras una lectura inválida");
     mock_tcs_desborde = 0;
@@ -488,15 +491,29 @@ int main(void)
     COMPROBAR(sistema_estado() == SIS_IDLE && visto[SIS_EVT_CANCELADO] == 1, "cancelar la espera debe volver a IDLE con evento");
     /* azul (frío): lejos de la posición neutra donde quedó el carrito, así que sí debe moverse */
     prox(PROX_OK); color(30, 60, 220);
-    sistema_medir(); avanzar(SISTEMA_PROX_ESTABLE_MS + 150);
+    sistema_medir(); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS);
     COMPROBAR(sistema_estado() == SIS_MOVE_TO_TARGET, "debe estar moviéndose (%s)", sistema_estado_texto(sistema_estado()));
     sistema_cancelar();
     avanzar(800);
     COMPROBAR(sistema_estado() == SIS_IDLE, "cancelar el movimiento debe volver a IDLE");
     COMPROBAR(carro_velocidad_real() == 0, "el motor debe quedar parado");
+    /* cancelar a mitad de la adquisición por ISR: debe detenerla y no producir ninguna medida */
+    memset(visto, 0, sizeof visto);
+    prox(PROX_OK); color(30, 60, 220);
+    sistema_medir();
+    for (int i = 0; i < 3000 && !mock_tcs_async_activo; i++) avanzar(1);
+    COMPROBAR(mock_tcs_async_activo, "la ISR debe estar adquiriendo tras esperar al objeto");
+    avanzar(100);
+    COMPROBAR(sistema_estado() == SIS_MEASURE && visto[SIS_EVT_MEDIDA] == 0, "a mitad de la adquisición aún no hay medida");
+    sistema_cancelar();
+    avanzar(1);
+    COMPROBAR(!mock_tcs_async_activo, "cancelar debe detener la ISR");
+    COMPROBAR(sistema_estado() == SIS_IDLE && visto[SIS_EVT_CANCELADO] == 1, "cancelar la medida debe volver a IDLE con evento");
+    avanzar(500);
+    COMPROBAR(visto[SIS_EVT_MEDIDA] == 0 && !mock_tcs_async_activo, "no debe llegar ninguna medida después de cancelar");
 
     TITULO("9. Historial");
-    sistema_medir(); color(40, 200, 60); avanzar(SISTEMA_PROX_ESTABLE_MS + 150); hasta_estado(SIS_IDLE, 60000);
+    sistema_medir(); color(40, 200, 60); avanzar(SISTEMA_PROX_ESTABLE_MS + 150 + MEDIDA_MS); hasta_estado(SIS_IDLE, 60000);
     COMPROBAR(sistema_guardar(), "guardar con lectura debe funcionar");
     COMPROBAR(historial_cantidad(sistema_historial()) == 1, "el historial debe tener 1 entrada (%d)", historial_cantidad(sistema_historial()));
 

@@ -7,6 +7,11 @@
  *
  * La calibración de color vive en RAM: se pierde al reiniciar (guardarla en
  * flash queda para la etapa de historial).
+ *
+ * La adquisición NO bloquea: usa la interrupción de ALARM0 (drivers/tcs3200_async). Se pide con
+ * deteccion_empezar() y se consulta con deteccion_paso() en cada vuelta del bucle principal
+ * (≈ DETECCION_MUESTRAS × 88 ms). deteccion_medir() y deteccion_calibrar_*() quedan como
+ * versiones que esperan, para las pruebas de banco.
  */
 #ifndef DETECCION_H
 #define DETECCION_H
@@ -33,12 +38,35 @@ typedef enum {
     DET_NO_PUEDE            /* el eje no acepta la orden (desarmado, error)  */
 } det_resultado_t;
 
+typedef enum {
+    DET_TAREA_MEDIR,
+    DET_TAREA_CAL_NEGRO,
+    DET_TAREA_CAL_BLANCO
+} det_tarea_t;
+
+typedef enum {
+    DET_PENDIENTE,      /* faltan juegos de medidas: volver a llamar a deteccion_paso()          */
+    DET_LISTO,          /* terminó bien (MEDIR: *lectura rellena; CAL_*: calibración guardada)   */
+    DET_FALLO           /* desborde, sin señal, sin calibrar o tarea no iniciada                 */
+} det_progreso_t;
+
 void deteccion_iniciar(void);
 
-/* Función que se llama sin parar mientras se mide (ver tcs3200_poner_espera). */
+/* Función que se llama sin parar mientras esperan deteccion_medir() / deteccion_calibrar_*(). */
 void deteccion_poner_espera(void (*hook)(void));
 
-/* Mide el color de la muestra que haya delante del sensor. */
+/* Arranca la adquisición por interrupción. false si el carrito no está quieto o ya hay una tarea. */
+bool deteccion_empezar(det_tarea_t tarea);
+
+/* Recoge los juegos que haya listos. Al terminar (LISTO o FALLO) detiene la adquisición.
+   *lectura solo se rellena con la tarea MEDIR. */
+det_progreso_t deteccion_paso(lectura_t *lectura);
+
+/* Aborta la tarea en curso y detiene la adquisición. */
+void deteccion_cancelar(void);
+bool deteccion_ocupada(void);
+
+/* Versiones que esperan hasta terminar (llaman al hook de espera). */
 bool deteccion_medir(lectura_t *lectura);
 
 /* Calibración de dos puntos: muestra negra mate / papel blanco. */
